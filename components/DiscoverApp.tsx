@@ -1,5 +1,6 @@
 "use client";
 
+import { LocationPicker } from "@/components/LocationPicker";
 import { TripMap } from "@/components/TripMap";
 import type {
   DurationMinutes,
@@ -78,6 +79,7 @@ export function DiscoverApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
@@ -365,7 +367,21 @@ export function DiscoverApp() {
               <button className="mini-button" type="button" onClick={requestLocation}>
                 Réessayer
               </button>
+              <button className="mini-button" type="button" onClick={() => setShowPicker(true)}>
+                Choisir sur la carte
+              </button>
             </div>
+            {showPicker && (
+              <LocationPicker
+                initialPosition={origin}
+                onConfirm={(pos) => {
+                  setOrigin(pos);
+                  setLocationState("Position choisie sur la carte");
+                  setShowPicker(false);
+                }}
+                onCancel={() => setShowPicker(false)}
+              />
+            )}
             {error && <div className="error-card">{error}</div>}
             <button className="button primary generate" disabled={loading} onClick={() => generate()}>
               {loading ? <><span className="spinner" /> Je construis ta sortie…</> : "Trouve-moi une sortie"}
