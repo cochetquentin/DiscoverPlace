@@ -1,12 +1,11 @@
-.PHONY: dev check install logs stats
+.PHONY: dev check install logs stats clean db clean-db
 
 dev:
 	@if [ ! -d node_modules ]; then npm install; fi
 	@echo ""
-	@echo "DiscoverPlace démarre sur http://localhost:3000"
-	@echo "Ctrl+C pour arrêter."
+	@echo "DiscoverPlace -> http://localhost:3000  (Ctrl+C pour arreter)"
 	@echo ""
-	@npm run dev
+	npx next dev
 
 check:
 	npm run typecheck
@@ -14,13 +13,19 @@ check:
 	npm run test
 	npm run build
 	@echo ""
-	@echo "Tout est bon. Le projet est prêt à être déployé."
+	@echo "Tout est bon."
 
 install:
 	npm install
 
 logs:
-	npx tsx --env-file=.env.local scripts/analyze-logs.ts
+	npx tsx --env-file=.env.local scripts/analyze-logs.ts; true
 
 stats:
-	npx tsx --env-file=.env.local scripts/stats-engine.ts
+	npx tsx --env-file=.env.local scripts/stats-engine.ts; true
+
+clean:
+	rm -rf .next tsconfig.tsbuildinfo test-results
+
+clean-db:
+	npx tsx --env-file=.env.local scripts/clean-db.ts; true

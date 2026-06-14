@@ -41,12 +41,12 @@ CREATE TABLE IF NOT EXISTS trip_logs (
 );
 
 CREATE TABLE IF NOT EXISTS trip_stops (
-  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  trip_log_id           UUID        NOT NULL REFERENCES trip_logs(id) ON DELETE CASCADE,
-  position              INTEGER     NOT NULL,
-  place_name            TEXT        NOT NULL,
-  place_source          TEXT        NOT NULL,
-  category              TEXT        NOT NULL,
+  id                    UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_log_id           UUID    NOT NULL REFERENCES trip_logs(id) ON DELETE CASCADE,
+  position              INTEGER,
+  place_name            TEXT,
+  place_source          TEXT,
+  category              TEXT,
   visit_minutes         INTEGER,
   signal_unusual        FLOAT,
   signal_quality        FLOAT,
@@ -54,14 +54,14 @@ CREATE TABLE IF NOT EXISTS trip_stops (
   walking_from_previous INTEGER
 );
 
+-- trip_id est la PK (utilisée pour l'upsert)
 CREATE TABLE IF NOT EXISTS trip_feedback (
-  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id          TEXT        PRIMARY KEY,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  trip_id          TEXT        NOT NULL UNIQUE,
-  status           TEXT        NOT NULL CHECK (status IN ('completed', 'rejected')),
-  mood             TEXT        NOT NULL,
-  walking          TEXT        NOT NULL,
-  duration_minutes INTEGER     NOT NULL
+  status           TEXT        CHECK (status IN ('completed', 'rejected')),
+  mood             TEXT,
+  walking          TEXT,
+  duration_minutes INTEGER
 );
 
 -- ============================================================
@@ -72,7 +72,6 @@ CREATE INDEX IF NOT EXISTS idx_trip_logs_created_at   ON trip_logs(created_at DE
 CREATE INDEX IF NOT EXISTS idx_trip_logs_mood_walking  ON trip_logs(mood, walking);
 CREATE INDEX IF NOT EXISTS idx_trip_logs_success       ON trip_logs(success);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_trip_log_id  ON trip_stops(trip_log_id);
-CREATE INDEX IF NOT EXISTS idx_trip_feedback_trip_id   ON trip_feedback(trip_id);
 
 -- ============================================================
 -- RLS — désactivé (accès via service_role uniquement)
@@ -86,7 +85,7 @@ ALTER TABLE trip_feedback DISABLE ROW LEVEL SECURITY;
 -- Permissions
 -- ============================================================
 
-GRANT INSERT, SELECT ON trip_logs     TO anon, authenticated, service_role;
-GRANT INSERT, SELECT ON trip_stops    TO anon, authenticated, service_role;
-GRANT INSERT, SELECT ON trip_feedback TO anon, authenticated, service_role;
-GRANT USAGE, SELECT   ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT INSERT, SELECT, DELETE ON trip_logs     TO anon, authenticated, service_role;
+GRANT INSERT, SELECT, DELETE ON trip_stops    TO anon, authenticated, service_role;
+GRANT INSERT, SELECT, DELETE ON trip_feedback TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
