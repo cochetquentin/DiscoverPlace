@@ -236,19 +236,22 @@ h1 {
   width: min(620px, 100%); background: var(--card);
   border: 1px solid var(--line); border-radius: 24px;
   box-shadow: 0 30px 80px rgba(29,41,38,.22);
+  max-height: calc(100dvh - 32px);
   overflow: hidden; display: flex; flex-direction: column;
 }
 .picker-header {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 20px 14px; border-bottom: 1px solid var(--line);
   font-size: .9rem; font-weight: 700;
 }
-.picker-map { width: 100%; height: 360px; }
+.picker-map { width: 100%; flex: 1; min-height: 150px; }
 .picker-warning {
   margin: 10px 16px; padding: 10px 14px;
   background: #fee5dc; color: #8c2d20; border-radius: 10px; font-size: .8rem;
 }
 .picker-actions {
+  flex-shrink: 0;
   display: flex; gap: 10px; justify-content: flex-end;
   padding: 16px 20px; border-top: 1px solid var(--line);
 }
@@ -278,5 +281,4 @@ h1 {
   .action-dock .button { flex: 1; min-width: 110px; font-size: .75rem; padding: 12px 8px; }
   .history-grid { grid-template-columns: 1fr; }
   .picker-modal { border-radius: 18px; }
-  .picker-map { height: 280px; }
 }

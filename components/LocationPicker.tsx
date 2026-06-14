@@ -12,6 +12,7 @@ type Props = {
   onCancel: () => void;
 };
 
+const TOKYO_STATION = { lat: 35.681236, lng: 139.767125 };
 const TOKYO_BOUNDS = { latMin: 34, latMax: 37, lngMin: 138, lngMax: 141 };
 
 function isInTokyo(pos: Coord) {
@@ -27,25 +28,29 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
   const mapRef = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<Coord | null>(null);
   const [outOfBounds, setOutOfBounds] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     if (!hasMapsKey) return;
 
+    // Fix 3: center on Tokyo Station if initial position is outside valid bounds
+    const center = isInTokyo(initialPosition) ? initialPosition : TOKYO_STATION;
+
     loadGoogleMaps()
       .then(() => {
         if (!active || !mapRef.current || !window.google?.maps) return;
 
         const map = new window.google.maps.Map(mapRef.current, {
-          center: initialPosition,
+          center,
           zoom: 13,
           disableDefaultUI: true,
           mapId: "DEMO_MAP_ID"
         });
 
         const marker = new window.google.maps.Marker({
-          position: initialPosition,
+          position: center,
           map,
           draggable: true
         });
@@ -66,12 +71,29 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           updatePicked({ lat: e.latLng.lat(), lng: e.latLng.lng() });
         });
       })
-      .catch(() => {});
+      // Fix 2: surface a visible error instead of silently failing
+      .catch(() => {
+        if (active) setMapError(true);
+      });
 
     return () => {
       active = false;
     };
   }, []);
+
+  const noMapContent = mapError ? (
+    <div className="picker-no-key">
+      <p>Impossible de charger la carte. Vérifie ta connexion ou recharge la page.</p>
+    </div>
+  ) : (
+    <div className="picker-no-key">
+      <p>
+        Carte indisponible : configure{" "}
+        <code>NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY</code> pour choisir
+        un point sur la carte.
+      </p>
+    </div>
+  );
 
   const content = (
     <div className="picker-overlay" role="dialog" aria-modal="true">
@@ -81,16 +103,10 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           <button className="mini-button" type="button" onClick={onCancel}>✕</button>
         </div>
 
-        {hasMapsKey ? (
+        {hasMapsKey && !mapError ? (
           <div className="picker-map" ref={mapRef} />
         ) : (
-          <div className="picker-no-key">
-            <p>
-              Carte indisponible : configure{" "}
-              <code>NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY</code> pour choisir
-              un point sur la carte.
-            </p>
-          </div>
+          noMapContent
         )}
 
         {outOfBounds && (
@@ -106,7 +122,7 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           <button
             className="button primary"
             type="button"
-            disabled={!picked || outOfBounds}
+            disabled={!picked || outOfBounds || mapError}
             onClick={() => picked && onConfirm(picked)}
           >
             Utiliser cette position

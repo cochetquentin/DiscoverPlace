@@ -10,7 +10,7 @@ import type {
   TripPlan,
   WalkingLevel
 } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const TOKYO_STATION = { lat: 35.681236, lng: 139.767125 };
 const HISTORY_KEY = "discover-place-history";
@@ -80,18 +80,24 @@ export function DiscoverApp() {
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const ignoreGeolocationRef = useRef(false);
 
   const requestLocation = () => {
+    ignoreGeolocationRef.current = false;
     if (!navigator.geolocation) {
       setLocationState("Géolocalisation non supportée : Tokyo Station utilisée");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        if (ignoreGeolocationRef.current) return;
         setOrigin({ lat: coords.latitude, lng: coords.longitude });
         setLocationState("Position actuelle détectée");
       },
-      (geolocationError) => setLocationState(geolocationErrorMessage(geolocationError)),
+      (geolocationError) => {
+        if (ignoreGeolocationRef.current) return;
+        setLocationState(geolocationErrorMessage(geolocationError));
+      },
       { enableHighAccuracy: true, timeout: 8_000 }
     );
   };
@@ -375,6 +381,7 @@ export function DiscoverApp() {
               <LocationPicker
                 initialPosition={origin}
                 onConfirm={(pos) => {
+                  ignoreGeolocationRef.current = true;
                   setOrigin(pos);
                   setLocationState("Position choisie sur la carte");
                   setShowPicker(false);
