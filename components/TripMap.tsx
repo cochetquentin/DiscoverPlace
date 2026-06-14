@@ -16,11 +16,11 @@ declare global {
           options: Record<string, unknown>
         ) => {
           fitBounds(bounds: { extend(point: Coordinate): void }): void;
-          addListener(event: string, handler: (e: { latLng: { lat(): number; lng(): number } }) => void): void;
+          addListener(event: string, handler: (e: { latLng?: { lat(): number; lng(): number } }) => void): void;
         };
         Marker: new (options: Record<string, unknown>) => {
           setPosition(pos: { lat: number; lng: number }): void;
-          addListener(event: string, handler: (e?: { latLng: { lat(): number; lng(): number } }) => void): void;
+          addListener(event: string, handler: (e?: { latLng?: { lat(): number; lng(): number } }) => void): void;
         };
         Polyline: new (options: Record<string, unknown>) => unknown;
         LatLngBounds: new () => {

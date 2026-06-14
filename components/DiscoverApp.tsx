@@ -54,9 +54,9 @@ function geolocationErrorMessage(error: GeolocationPositionError) {
     return "Position indisponible pour l’instant. GPS ou réseau capricieux, classique.";
   }
   if (error.code === error.TIMEOUT) {
-    return "Position trop lente à répondre. Tokyo Station utilisée pour éviter d’attendre comme devant une administration.";
+    return "Position trop lente à répondre. Choisis un point sur la carte ou réessaie.";
   }
-  return "Position impossible à récupérer : Tokyo Station utilisée.";
+  return "Position impossible à récupérer. Choisis un point sur la carte ou réessaie.";
 }
 
 function Metric({ value, label }: { value: string; label: string }) {
@@ -85,7 +85,7 @@ export function DiscoverApp() {
   const requestLocation = () => {
     ignoreGeolocationRef.current = false;
     if (!navigator.geolocation) {
-      setLocationState("Géolocalisation non supportée : Tokyo Station utilisée");
+      setLocationState("Géolocalisation non supportée. Choisis un point sur la carte.");
       return;
     }
     navigator.geolocation.getCurrentPosition(

@@ -28,11 +28,25 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
   // Use Tokyo Station as fallback center when the initial position is outside bounds
   const center = isInTokyo(initialPosition) ? initialPosition : TOKYO_STATION;
   const mapRef = useRef<HTMLDivElement>(null);
-  // Initialize picked to the rendered marker position so confirm is usable immediately
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Initialize picked to the rendered marker so confirm is usable immediately
   const [picked, setPicked] = useState<Coord>(center);
   const [outOfBounds, setOutOfBounds] = useState(!isInTokyo(center));
   const [mapError, setMapError] = useState(false);
 
+  // Focus management: move focus into dialog on open, restore it on close
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const first = dialogRef.current?.querySelector<HTMLElement>(
+      "button:not([disabled]), [tabindex]:not([tabindex='-1'])"
+    );
+    first?.focus();
+    return () => {
+      previousFocus?.focus();
+    };
+  }, []);
+
+  // Map initialization
   useEffect(() => {
     let active = true;
 
@@ -60,18 +74,19 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           setOutOfBounds(!isInTokyo(pos));
         };
 
-        map.addListener("click", (e: { latLng: { lat(): number; lng(): number } }) => {
+        // Guard: latLng is optional in MapMouseEvent
+        map.addListener("click", (e: { latLng?: { lat(): number; lng(): number } }) => {
+          if (!e.latLng) return;
           const pos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
           marker.setPosition(pos);
           updatePicked(pos);
         });
 
-        marker.addListener("dragend", (e?: { latLng: { lat(): number; lng(): number } }) => {
-          if (!e) return;
+        marker.addListener("dragend", (e?: { latLng?: { lat(): number; lng(): number } }) => {
+          if (!e?.latLng) return;
           updatePicked({ lat: e.latLng.lat(), lng: e.latLng.lng() });
         });
       })
-      // Fix 2: surface a visible error instead of silently failing
       .catch(() => {
         if (active) setMapError(true);
       });
@@ -80,6 +95,30 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
       active = false;
     };
   }, []);
+
+  // Trap focus inside dialog and handle Escape
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      onCancel();
+      return;
+    }
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      )
+    );
+    if (focusable.length < 2) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   const noMapContent = mapError ? (
     <div className="picker-no-key">
@@ -96,7 +135,13 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
   );
 
   const content = (
-    <div className="picker-overlay" role="dialog" aria-modal="true">
+    <div
+      className="picker-overlay"
+      role="dialog"
+      aria-modal="true"
+      ref={dialogRef}
+      onKeyDown={handleKeyDown}
+    >
       <div className="picker-modal">
         <div className="picker-header">
           <span>Choisir un point de départ</span>
@@ -122,7 +167,7 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           <button
             className="button primary"
             type="button"
-            disabled={outOfBounds || mapError}
+            disabled={outOfBounds || mapError || !hasMapsKey}
             onClick={() => onConfirm(picked)}
           >
             Utiliser cette position
