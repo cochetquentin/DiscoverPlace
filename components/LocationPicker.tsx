@@ -25,18 +25,18 @@ function isInTokyo(pos: Coord) {
 }
 
 export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) {
+  // Use Tokyo Station as fallback center when the initial position is outside bounds
+  const center = isInTokyo(initialPosition) ? initialPosition : TOKYO_STATION;
   const mapRef = useRef<HTMLDivElement>(null);
-  const [picked, setPicked] = useState<Coord | null>(null);
-  const [outOfBounds, setOutOfBounds] = useState(false);
+  // Initialize picked to the rendered marker position so confirm is usable immediately
+  const [picked, setPicked] = useState<Coord>(center);
+  const [outOfBounds, setOutOfBounds] = useState(!isInTokyo(center));
   const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     if (!hasMapsKey) return;
-
-    // Fix 3: center on Tokyo Station if initial position is outside valid bounds
-    const center = isInTokyo(initialPosition) ? initialPosition : TOKYO_STATION;
 
     loadGoogleMaps()
       .then(() => {
@@ -122,8 +122,8 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
           <button
             className="button primary"
             type="button"
-            disabled={!picked || outOfBounds || mapError}
-            onClick={() => picked && onConfirm(picked)}
+            disabled={outOfBounds || mapError}
+            onClick={() => onConfirm(picked)}
           >
             Utiliser cette position
           </button>
