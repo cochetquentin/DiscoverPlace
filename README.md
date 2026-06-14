@@ -6,18 +6,12 @@ PWA privée qui transforme une durée disponible en micro-aventure immédiatemen
 
 Le mode démo fonctionne sans clé API et utilise Tokyo Station comme position de secours.
 
-Depuis Git Bash :
-
 ```bash
-./dev
+make dev
 ```
 
-Le script installe automatiquement les dépendances si nécessaire, puis ouvre le serveur
-sur `http://localhost:3000`. Garde le terminal ouvert pendant l'utilisation et appuie sur
-`Ctrl+C` pour arrêter.
-
-RTK n'est volontairement pas utilisé pour lancer le serveur : il masque les logs des
-processus qui restent actifs.
+Installe les dépendances si nécessaire puis ouvre le serveur sur `http://localhost:3000`.
+Ctrl+C pour arrêter.
 
 ### Test sur mobile
 
@@ -63,11 +57,12 @@ Pour un comportement plus réaliste en production, mets `false`.
 ### Logging Supabase
 
 Chaque requête est loggée dans Supabase (tables `trip_logs`, `trip_stops`, `trip_feedback`).
-Les scripts d'analyse sont dans `scripts/` :
+
+Pour initialiser la base, coller le contenu de `supabase/setup.sql` dans l'éditeur SQL de Supabase. Le script est idempotent.
 
 ```bash
-npx tsx --env-file=.env.local scripts/analyze-logs.ts   # derniers trips avec stops
-npx tsx --env-file=.env.local scripts/stats-engine.ts   # stats moteur (anchors, nearby, routes)
+make logs    # derniers trips avec stops détaillés
+make stats   # stats moteur (anchors, nearby, routes considérées)
 ```
 
 ### Paramètres walking
@@ -81,10 +76,10 @@ npx tsx --env-file=.env.local scripts/stats-engine.ts   # stats moteur (anchors,
 ## Vérification
 
 ```bash
-./check
+make check
 ```
 
-Cette commande exécute le typecheck, le lint, les tests et le build production.
+Exécute le typecheck, le lint, les tests et le build production.
 
 ## Accès partout avec Vercel
 
