@@ -34,7 +34,8 @@ describe("beam search", () => {
       returnMinutes: 15,
       visitedIds: new Set(),
       rejectedIds: new Set(),
-      now: new Date("2026-06-07T10:00:00Z")
+      now: new Date("2026-06-07T10:00:00Z"),
+      isScheduled: false
     });
     expect(routes.length).toBeGreaterThan(0);
     expect(routes.every((route) => route.totalMinutes <= 108)).toBe(true);
@@ -49,7 +50,8 @@ describe("beam search", () => {
       returnMinutes: 15,
       visitedIds: new Set(["visited"]),
       rejectedIds: new Set(),
-      now: new Date("2026-06-07T10:00:00Z")
+      now: new Date("2026-06-07T10:00:00Z"),
+      isScheduled: false
     });
     expect(routes.flatMap((route) => route.places.map((place) => place.id))).not.toContain("visited");
   });

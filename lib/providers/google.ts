@@ -189,7 +189,7 @@ function estimatedTransitMinutes(from: Coordinate, to: Coordinate): number {
 }
 
 export class GoogleRoutingProvider implements RoutingProvider {
-  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK") {
+  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date) {
     if (destinations.length === 0) return new Map<string, number>();
     const response = await googleFetch<
       { destinationIndex?: number; duration?: string; condition?: string }[]
@@ -207,7 +207,8 @@ export class GoogleRoutingProvider implements RoutingProvider {
             }
           }
         })),
-        travelMode: mode
+        travelMode: mode,
+        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {})
       },
       "destinationIndex,duration,condition",
       "Routes API Compute Route Matrix"
@@ -250,7 +251,8 @@ export class GoogleRoutingProvider implements RoutingProvider {
     to: Coordinate,
     mode: "TRANSIT" | "WALK",
     fromName: string,
-    toName: string
+    toName: string,
+    departureTime?: Date
   ): Promise<RouteLeg> {
     const response = await googleFetch<{
       routes?: {
@@ -265,7 +267,8 @@ export class GoogleRoutingProvider implements RoutingProvider {
         destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
         travelMode: mode,
         languageCode: "fr-FR",
-        units: "METRIC"
+        units: "METRIC",
+        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {})
       },
       "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
       "Routes API Compute Routes"

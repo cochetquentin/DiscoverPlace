@@ -68,7 +68,8 @@ async function makeStopsAndLegs(
     first.coordinate,
     "TRANSIT",
     "Position actuelle",
-    first.name
+    first.name,
+    now
   );
   legs.push(outbound);
   cursor = addMinutes(cursor, outbound.durationMinutes);
@@ -106,7 +107,8 @@ async function makeStopsAndLegs(
     request.origin,
     "TRANSIT",
     last.name,
-    "Position actuelle"
+    "Position actuelle",
+    cursor
   );
   legs.push(inbound);
   return { stops, legs };
@@ -115,7 +117,8 @@ async function makeStopsAndLegs(
 async function returnMinutesFor(
   routing: ReturnType<typeof createProviders>["routing"],
   origin: GenerateTripRequest["origin"],
-  anchor: PlaceCandidate
+  anchor: PlaceCandidate,
+  departureTime?: Date
 ) {
   const originCandidate: PlaceCandidate = {
     id: "origin",
@@ -126,7 +129,7 @@ async function returnMinutesFor(
     types: [],
     signals: { unusual: 0, quality: 0, descriptive: 0, chainPenalty: 0 }
   };
-  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT")).get("origin");
+  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT", departureTime)).get("origin");
 }
 
 export async function generateTrip(
@@ -144,7 +147,8 @@ export async function generateTrip(
   const anchors = await providers.verifier.verify(deduplicatePlaces(rawAnchors));
   const anchorCount = anchors.length;
   const anchorsForRouting = anchors.slice(0, 12);
-  const outbound = await providers.routing.matrix(request.origin, anchorsForRouting, "TRANSIT");
+  const isScheduled = Boolean(request.departureAt || request.arrivalBy);
+  const outbound = await providers.routing.matrix(request.origin, anchorsForRouting, "TRANSIT", now);
   if (anchorsForRouting.length === 0) {
     throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
   }
@@ -170,7 +174,7 @@ export async function generateTrip(
     eligible.slice(0, 3).map(async (anchor) => {
       const [nearby, returnMinutes] = await Promise.all([
         providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
-        returnMinutesFor(providers.routing, request.origin, anchor)
+        returnMinutesFor(providers.routing, request.origin, anchor, now)
       ]);
       if (
         returnMinutes === undefined ||
@@ -188,7 +192,8 @@ export async function generateTrip(
         returnMinutes,
         visitedIds,
         rejectedIds,
-        now
+        now,
+        isScheduled
       });
     })
   );

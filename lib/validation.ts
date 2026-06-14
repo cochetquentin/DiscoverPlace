@@ -22,4 +22,16 @@ export const generateTripSchema = z
   .refine(
     (data) => !(data.departureAt && data.arrivalBy),
     { message: "departureAt and arrivalBy are mutually exclusive", path: ["departureAt"] }
+  )
+  .refine(
+    (data) => {
+      const departure = data.departureAt
+        ? new Date(data.departureAt)
+        : data.arrivalBy
+          ? new Date(new Date(data.arrivalBy).getTime() - data.durationMinutes * 60_000)
+          : null;
+      if (!departure) return true;
+      return departure.getTime() > Date.now() - 5 * 60_000;
+    },
+    { message: "L'heure de départ calculée est dans le passé.", path: ["departureAt"] }
   );

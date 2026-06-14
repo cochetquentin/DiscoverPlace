@@ -93,13 +93,19 @@ export function moodFit(place: PlaceCandidate, mood: Mood): number {
 export function isOpenForVisit(
   place: PlaceCandidate,
   arrival: Date,
-  visitMinutes: number
+  visitMinutes: number,
+  isScheduled = false
 ): { allowed: boolean; warning?: string } {
   if (!["cafe", "restaurant", "museum"].includes(place.category)) {
     return {
       allowed: true,
       warning: place.openingHours ? undefined : "Horaires non vérifiés"
     };
+  }
+
+  // En planning futur, openNow et nextCloseTime reflètent l'état actuel, pas l'heure planifiée
+  if (isScheduled) {
+    return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
   }
 
   // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle

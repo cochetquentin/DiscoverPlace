@@ -33,8 +33,20 @@ const walkingOptions: { value: WalkingLevel; label: string }[] = [
 const formatTime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
+const formatDatetime = (iso: string) =>
+  new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit"
+  }).format(new Date(iso));
+
+// Interpréter la valeur datetime-local en JST (UTC+9), timezone fixe de l'app
 function datetimeToISO(value: string): string {
-  return new Date(value).toISOString();
+  return new Date(`${value}:00+09:00`).toISOString();
+}
+
+// Valeur minimum pour les inputs datetime-local : maintenant en JST
+function nowJSTLocal(): string {
+  return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Tokyo" }).replace(" ", "T").slice(0, 16);
 }
 
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
@@ -245,7 +257,7 @@ export function DiscoverApp() {
             <div>
               <p className="eyebrow">
                 {trip.request.departureAt || trip.request.arrivalBy
-                  ? `Départ ${formatTime(trip.startsAt)} · retour ${formatTime(trip.returnsAt)}`
+                  ? `Départ ${formatDatetime(trip.startsAt)} · retour ${formatDatetime(trip.returnsAt)}`
                   : `Pars maintenant · retour ${formatTime(trip.returnsAt)}`}
               </p>
               <h1>{trip.title}</h1>
@@ -272,7 +284,12 @@ export function DiscoverApp() {
                 <div className="stop-index">{index + 1}</div>
                 <div className="stop-card">
                   <div className="stop-meta">
-                    <span>{formatTime(stop.arrivalAt)}–{formatTime(stop.departureAt)}</span>
+                    <span>
+                      {new Date(stop.arrivalAt).toDateString() !== new Date(trip.startsAt).toDateString()
+                        ? formatDatetime(stop.arrivalAt)
+                        : formatTime(stop.arrivalAt)}
+                      –{formatTime(stop.departureAt)}
+                    </span>
                     <span>{stop.visitMinutes} min</span>
                   </div>
                   <h2>{stop.place.name}</h2>
@@ -423,6 +440,7 @@ export function DiscoverApp() {
                     <input
                       type="datetime-local"
                       value={selectedTime}
+                      min={nowJSTLocal()}
                       onChange={(e) => setSelectedTime(e.target.value)}
                       style={{ marginTop: "10px", width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit", boxSizing: "border-box" }}
                     />
@@ -437,6 +455,7 @@ export function DiscoverApp() {
                   <input
                     type="datetime-local"
                     value={selectedTime}
+                    min={nowJSTLocal()}
                     onChange={(e) => setSelectedTime(e.target.value)}
                     style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit" }}
                   />
