@@ -33,6 +33,10 @@ const walkingOptions: { value: WalkingLevel; label: string }[] = [
 const formatTime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
+function datetimeToISO(value: string): string {
+  return new Date(value).toISOString();
+}
+
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
   const query = new URLSearchParams({
     api: "1",
@@ -80,6 +84,9 @@ export function DiscoverApp() {
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [timeMode, setTimeMode] = useState<"departure" | "arrival">("departure");
+  const [departureNow, setDepartureNow] = useState(true);
+  const [selectedTime, setSelectedTime] = useState("");
   const ignoreGeolocationRef = useRef(false);
 
   const requestLocation = () => {
@@ -136,7 +143,13 @@ export function DiscoverApp() {
       mood,
       walking,
       excludeTripId,
-      excludedPlaceIds: [...new Set(excludedPlaceIds)]
+      excludedPlaceIds: [...new Set(excludedPlaceIds)],
+      ...(timeMode === "departure" && !departureNow && selectedTime
+        ? { departureAt: datetimeToISO(selectedTime) }
+        : {}),
+      ...(timeMode === "arrival" && selectedTime
+        ? { arrivalBy: datetimeToISO(selectedTime) }
+        : {})
     };
     try {
       const response = await fetch("/api/trips/generate", {
@@ -230,7 +243,11 @@ export function DiscoverApp() {
         <section className="result-screen">
           <div className="result-hero">
             <div>
-              <p className="eyebrow">Pars maintenant · retour {formatTime(trip.returnsAt)}</p>
+              <p className="eyebrow">
+                {trip.request.departureAt || trip.request.arrivalBy
+                  ? `Départ ${formatTime(trip.startsAt)} · retour ${formatTime(trip.returnsAt)}`
+                  : `Pars maintenant · retour ${formatTime(trip.returnsAt)}`}
+              </p>
               <h1>{trip.title}</h1>
               <p className="lede">{trip.summary}</p>
             </div>
@@ -367,6 +384,66 @@ export function DiscoverApp() {
               </div>
             </section>
 
+            <section className="planner-section">
+              <div className="section-heading">
+                <span>04</span>
+                <h2>Horaire</h2>
+              </div>
+              <div className="segmented" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: "12px" }}>
+                <button
+                  className={timeMode === "departure" ? "active" : ""}
+                  onClick={() => { setTimeMode("departure"); setDepartureNow(true); setSelectedTime(""); }}
+                >
+                  Départ
+                </button>
+                <button
+                  className={timeMode === "arrival" ? "active" : ""}
+                  onClick={() => { setTimeMode("arrival"); setDepartureNow(false); setSelectedTime(""); }}
+                >
+                  Arrivée
+                </button>
+              </div>
+              {timeMode === "departure" && (
+                <>
+                  <div className="segmented" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <button
+                      className={departureNow ? "active" : ""}
+                      onClick={() => { setDepartureNow(true); setSelectedTime(""); }}
+                    >
+                      Maintenant
+                    </button>
+                    <button
+                      className={!departureNow ? "active" : ""}
+                      onClick={() => setDepartureNow(false)}
+                    >
+                      Choisir l'heure
+                    </button>
+                  </div>
+                  {!departureNow && (
+                    <input
+                      type="datetime-local"
+                      value={selectedTime}
+                      onChange={(e) => setSelectedTime(e.target.value)}
+                      style={{ marginTop: "10px", width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit", boxSizing: "border-box" }}
+                    />
+                  )}
+                </>
+              )}
+              {timeMode === "arrival" && (
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.82rem", fontWeight: 600, whiteSpace: "nowrap" }}>
+                    Rentrer avant
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={selectedTime}
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                    style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit" }}
+                  />
+                </div>
+              )}
+            </section>
+
             <div className="location-line">
               <span>⌖</span>
               <span>{locationState}</span>
@@ -390,7 +467,11 @@ export function DiscoverApp() {
               />
             )}
             {error && <div className="error-card">{error}</div>}
-            <button className="button primary generate" disabled={loading} onClick={() => generate()}>
+            <button
+              className="button primary generate"
+              disabled={loading || (timeMode === "arrival" && !selectedTime) || (timeMode === "departure" && !departureNow && !selectedTime)}
+              onClick={() => generate()}
+            >
               {loading ? <><span className="spinner" /> Je construis ta sortie…</> : "Trouve-moi une sortie"}
             </button>
             <p className="promise">Retour garanti dans le créneau, marge incluse.</p>

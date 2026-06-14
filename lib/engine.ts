@@ -32,6 +32,14 @@ function planningNow() {
   return relaxed;
 }
 
+function resolveNow(request: GenerateTripRequest): Date {
+  if (request.departureAt) return new Date(request.departureAt);
+  if (request.arrivalBy) {
+    return new Date(new Date(request.arrivalBy).getTime() - request.durationMinutes * 60_000);
+  }
+  return planningNow();
+}
+
 function titleFor(route: ScoredRoute, request: GenerateTripRequest) {
   const mood = {
     surprise: "Surprise locale",
@@ -125,7 +133,7 @@ export async function generateTrip(
   request: GenerateTripRequest
 ): Promise<{ plan: TripPlan; stats: EngineStats }> {
   const providers = createProviders();
-  const now = planningNow();
+  const now = resolveNow(request);
   const transitLimit = config.relaxedTripPlanning
     ? relaxedMaxTransitLeg(request.durationMinutes)
     : maxTransitLeg(request.durationMinutes);
@@ -221,7 +229,7 @@ export async function generateTrip(
 
   const plan: TripPlan = {
     id: crypto.randomUUID(),
-    createdAt: now.toISOString(),
+    createdAt: new Date().toISOString(),
     request,
     title: titleFor(chosen, request),
     summary: `${stops.length} étapes choisies pour privilégier la surprise sans dépasser ton temps.`,

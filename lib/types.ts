@@ -14,6 +14,8 @@ export type GenerateTripRequest = {
   walking: WalkingLevel;
   excludeTripId?: string;
   excludedPlaceIds?: string[];
+  departureAt?: string;  // ISO 8601 — heure de départ explicite
+  arrivalBy?: string;    // ISO 8601 — heure de retour souhaitée
 };
 
 export type PlaceCategory =
