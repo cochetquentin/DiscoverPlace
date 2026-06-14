@@ -1,5 +1,6 @@
 "use client";
 
+import { LocationPicker } from "@/components/LocationPicker";
 import { TripMap } from "@/components/TripMap";
 import type {
   DurationMinutes,
@@ -9,7 +10,7 @@ import type {
   TripPlan,
   WalkingLevel
 } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const TOKYO_STATION = { lat: 35.681236, lng: 139.767125 };
 const HISTORY_KEY = "discover-place-history";
@@ -53,9 +54,9 @@ function geolocationErrorMessage(error: GeolocationPositionError) {
     return "Position indisponible pour l’instant. GPS ou réseau capricieux, classique.";
   }
   if (error.code === error.TIMEOUT) {
-    return "Position trop lente à répondre. Tokyo Station utilisée pour éviter d’attendre comme devant une administration.";
+    return "Position trop lente à répondre. Choisis un point sur la carte ou réessaie.";
   }
-  return "Position impossible à récupérer : Tokyo Station utilisée.";
+  return "Position impossible à récupérer. Choisis un point sur la carte ou réessaie.";
 }
 
 function Metric({ value, label }: { value: string; label: string }) {
@@ -78,18 +79,25 @@ export function DiscoverApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const ignoreGeolocationRef = useRef(false);
 
   const requestLocation = () => {
+    ignoreGeolocationRef.current = false;
     if (!navigator.geolocation) {
-      setLocationState("Géolocalisation non supportée : Tokyo Station utilisée");
+      setLocationState("Géolocalisation non supportée. Choisis un point sur la carte.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        if (ignoreGeolocationRef.current) return;
         setOrigin({ lat: coords.latitude, lng: coords.longitude });
         setLocationState("Position actuelle détectée");
       },
-      (geolocationError) => setLocationState(geolocationErrorMessage(geolocationError)),
+      (geolocationError) => {
+        if (ignoreGeolocationRef.current) return;
+        setLocationState(geolocationErrorMessage(geolocationError));
+      },
       { enableHighAccuracy: true, timeout: 8_000 }
     );
   };
@@ -365,7 +373,22 @@ export function DiscoverApp() {
               <button className="mini-button" type="button" onClick={requestLocation}>
                 Réessayer
               </button>
+              <button className="mini-button" type="button" onClick={() => setShowPicker(true)}>
+                Choisir sur la carte
+              </button>
             </div>
+            {showPicker && (
+              <LocationPicker
+                initialPosition={origin}
+                onConfirm={(pos) => {
+                  ignoreGeolocationRef.current = true;
+                  setOrigin(pos);
+                  setLocationState("Position choisie sur la carte");
+                  setShowPicker(false);
+                }}
+                onCancel={() => setShowPicker(false)}
+              />
+            )}
             {error && <div className="error-card">{error}</div>}
             <button className="button primary generate" disabled={loading} onClick={() => generate()}>
               {loading ? <><span className="spinner" /> Je construis ta sortie…</> : "Trouve-moi une sortie"}

@@ -1,5 +1,6 @@
 "use client";
 
+import { hasMapsKey, loadGoogleMaps } from "@/lib/googleMaps";
 import type { Coordinate, TripPlan } from "@/lib/types";
 import { useEffect, useRef, useState } from "react";
 
@@ -15,8 +16,12 @@ declare global {
           options: Record<string, unknown>
         ) => {
           fitBounds(bounds: { extend(point: Coordinate): void }): void;
+          addListener(event: string, handler: (e: { latLng?: { lat(): number; lng(): number } }) => void): void;
         };
-        Marker: new (options: Record<string, unknown>) => unknown;
+        Marker: new (options: Record<string, unknown>) => {
+          setPosition(pos: { lat: number; lng: number }): void;
+          addListener(event: string, handler: (e?: { latLng?: { lat(): number; lng(): number } }) => void): void;
+        };
         Polyline: new (options: Record<string, unknown>) => unknown;
         LatLngBounds: new () => {
           extend(point: Coordinate): void;
@@ -31,29 +36,9 @@ declare global {
   }
 }
 
-const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY;
-
-function loadGoogleMaps() {
-  if (window.google?.maps || !key) return Promise.resolve();
-  return new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>("#google-maps-script");
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "google-maps-script";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry`;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Google Maps indisponible"));
-    document.head.appendChild(script);
-  });
-}
-
 export function TripMap({ trip }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const [fallback, setFallback] = useState(!key);
+  const [fallback, setFallback] = useState(!hasMapsKey);
 
   useEffect(() => {
     let active = true;
