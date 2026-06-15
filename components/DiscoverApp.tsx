@@ -287,14 +287,28 @@ export function DiscoverApp() {
               <h1>{trip.title}</h1>
               <p className="lede">{trip.summary}</p>
             </div>
-            <div className="score-stamp">
-              <strong>{Math.round(trip.score)}</strong>
-              <span>indice découverte</span>
+            <div className="result-hero-side">
+              <div className="score-stamp">
+                <strong>{Math.round(trip.score)}</strong>
+                <span>indice découverte</span>
+              </div>
+              <div className="action-dock action-dock--hero">
+                <button className="button secondary" disabled={loading} onClick={() => generate(trip.id)}>
+                  Autre idée
+                </button>
+                <button className="button ghost" onClick={() => feedback("rejected")}>Pas pour moi</button>
+                <button className="button primary" onClick={() => feedback("completed")}>
+                  J'ai fait cette sortie
+                </button>
+              </div>
             </div>
           </div>
 
-          <TripMap trip={trip} />
-
+          <div className="result-body">
+            <div className="result-map-col">
+              <TripMap trip={trip} />
+            </div>
+            <div className="result-content-col">
           <div className="metrics">
             <Metric value={`${trip.transitMinutes} min`} label="transport" />
             <Metric value={`${trip.walkingMinutes} min`} label="marche" />
@@ -350,8 +364,10 @@ export function DiscoverApp() {
               </div>
             </article>
           </div>
+            </div>
+          </div>
 
-          <div className="action-dock">
+          <div className="action-dock action-dock--bottom">
             <button className="button secondary" disabled={loading} onClick={() => generate(trip.id)}>
               Autre idée
             </button>
