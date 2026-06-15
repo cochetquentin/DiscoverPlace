@@ -87,8 +87,8 @@ git commit -m "fix: appliquer corrections Codex — {résumé 1 ligne}"
 git push
 ```
 
-Si **aucune modification** → ne pas commiter, ne pas relancer Codex.
-Afficher le résumé final avec `@Codex review relancé : NON (aucun changement)` et arrêter.
+Si **aucune modification** → exécuter quand même Phase 7 (rapport ignorées si applicable),
+puis afficher le résumé final avec `@Codex review relancé : NON (aucun changement)` et arrêter.
 
 ---
 
@@ -106,6 +106,15 @@ Le script poste un tableau Markdown sur la PR. Sans ignorées → ne rien poster
 ---
 
 ## Phase 8 — Relancer Codex
+
+Re-vérifier l'anti-boucle avant de poster (le statut peut avoir changé pendant les phases 4-7) :
+
+```bash
+bash .claude/scripts/codex-review/anti-loop-check.sh <REPO> <PR>
+```
+
+- exit 1 → ne pas relancer, afficher la raison.
+- exit 0 → poster le trigger :
 
 ```bash
 bash .claude/scripts/codex-review/trigger.sh <PR>
