@@ -7,10 +7,10 @@ PR=$2
 SINCE=$3
 
 gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.submitted_at > \"$SINCE\") | {type:\"review\",state:.state,body:.body,file:null,line:null}"
+  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.submitted_at > \"$SINCE\") | select(.body != null and .body != \"\") | {type:\"review\",state:.state,body:.body,file:null,line:null}"
 
 gh api --paginate "repos/$REPO/pulls/$PR/comments" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"$SINCE\") | {type:\"inline\",body:.body,file:.path,line:.line}"
+  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"$SINCE\") | select(.body != null and .body != \"\") | {type:\"inline\",body:.body,file:.path,line:.line}"
 
 gh api --paginate "repos/$REPO/issues/$PR/comments" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"$SINCE\") | {type:\"general\",body:.body,file:null,line:null}"
+  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"$SINCE\") | select(.body != null and .body != \"\") | {type:\"general\",body:.body,file:null,line:null}"

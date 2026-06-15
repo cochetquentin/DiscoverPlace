@@ -56,7 +56,7 @@ Pour chaque remarque (dans l'ordre de priorité) :
 
 1. Lire le fichier concerné pour comprendre le contexte actuel.
 2. **Évaluer** : la remarque est-elle valide ? Déjà corrigée dans un commit précédent ?
-3. Si le fichier est dans `dirty[]` → **ignorer** (évite de mélanger avec des modifications locales préexistantes).
+3. Si le fichier est dans `dirty[]` **ou** `new[]` → **ignorer** (évite de mélanger avec des modifications locales préexistantes, trackées ou non).
 4. Si **valide** → appliquer, noter `[APPLIQUÉ] fichier:ligne — description`.
 5. Si **invalide / non applicable** → ignorer, noter `[IGNORÉ] description — raison courte`.
 

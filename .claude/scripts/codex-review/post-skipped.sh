@@ -6,7 +6,15 @@ set -euo pipefail
 PR=$1
 DATA=$2
 
-ROWS=$(echo "$DATA" | jq -r '.[] | "| \(.remark) | \(.reason) |"')
+ROWS=$(uv run python -c "
+import json, sys
+items = json.loads('''$DATA''')
+if not items:
+    sys.exit(0)
+for item in items:
+    print('| ' + item['remark'] + ' | ' + item['reason'] + ' |')
+")
+
 if [ -z "$ROWS" ]; then
   exit 0
 fi
