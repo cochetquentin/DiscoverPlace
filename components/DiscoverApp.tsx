@@ -364,7 +364,7 @@ export function DiscoverApp() {
                   <button
                     className={durationMinutes === duration ? "choice active" : "choice"}
                     key={duration}
-                    onClick={() => setDuration(duration as DurationMinutes)}
+                    onClick={() => { setDuration(duration as DurationMinutes); if (timeMode === "arrival") setSelectedTime(""); }}
                   >
                     <strong>{duration < 60 ? duration : duration / 60}</strong>
                     <span>{duration === 60 ? "heure" : "heures"}</span>
@@ -449,7 +449,7 @@ export function DiscoverApp() {
                       type="datetime-local"
                       value={selectedTime}
                       min={nowJSTLocal()}
-                      max={maxJSTLocal()}
+                      max={nowJSTLocal(100 * 24 * 60 * 60 * 1000 - durationMinutes * 60_000)}
                       onChange={(e) => setSelectedTime(e.target.value)}
                       style={{ marginTop: "10px", width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit", boxSizing: "border-box" }}
                     />

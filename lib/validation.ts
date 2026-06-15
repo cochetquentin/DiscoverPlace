@@ -37,9 +37,16 @@ export const generateTripSchema = z
   )
   .refine(
     (data) => {
-      const ts = data.departureAt ?? data.arrivalBy;
-      if (!ts) return true;
-      return new Date(ts).getTime() < Date.now() + 100 * 24 * 60 * 60 * 1000;
+      const HORIZON_MS = 100 * 24 * 60 * 60 * 1000;
+      // Pour departureAt : valider departureAt + durationMinutes (la dernière requête routing)
+      if (data.departureAt) {
+        return new Date(data.departureAt).getTime() + data.durationMinutes * 60_000 < Date.now() + HORIZON_MS;
+      }
+      // Pour arrivalBy : le retour arrive à arrivalBy, c'est le timestamp le plus tardif
+      if (data.arrivalBy) {
+        return new Date(data.arrivalBy).getTime() < Date.now() + HORIZON_MS;
+      }
+      return true;
     },
     { message: "L'heure planifiée dépasse l'horizon de 100 jours des transports en commun.", path: ["departureAt"] }
   );

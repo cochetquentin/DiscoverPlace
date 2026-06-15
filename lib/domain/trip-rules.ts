@@ -103,23 +103,27 @@ export function isOpenForVisit(
     };
   }
 
-  // En planning futur (> 2h), openNow et nextCloseTime reflètent l'état actuel, pas l'heure planifiée
-  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-  if (isScheduled && arrival.getTime() - Date.now() > TWO_HOURS_MS) {
-    return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
-  }
-
-  // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle
-  if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
-    return { allowed: false };
+  // En planning futur, openNow reflète l'instant courant, pas l'heure planifiée — on l'ignore
+  // et on s'appuie uniquement sur nextCloseTime pour valider la disponibilité.
+  if (!isScheduled) {
+    // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle
+    if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+      return { allowed: false };
+    }
   }
 
   if (!place.openingHours?.nextCloseTime) {
-    return { allowed: true, warning: "Horaires de fermeture non confirmés" };
+    return {
+      allowed: true,
+      warning: isScheduled ? "Horaires à vérifier pour la date planifiée" : "Horaires de fermeture non confirmés"
+    };
   }
 
   const requiredOpenUntil = new Date(arrival.getTime() + (visitMinutes + 10) * 60_000);
   return {
-    allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil
+    allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil,
+    ...(isScheduled && new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil
+      ? { warning: "Horaires à vérifier pour la date planifiée" }
+      : {})
   };
 }

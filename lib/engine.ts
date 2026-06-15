@@ -178,9 +178,7 @@ export async function generateTrip(
       const [nearby, returnMinutes] = await Promise.all([
         providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
         returnMinutesFor(providers.routing, request.origin, anchor,
-          request.arrivalBy
-            ? new Date(request.arrivalBy)
-            : new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+          new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
         )
       ]);
       if (
