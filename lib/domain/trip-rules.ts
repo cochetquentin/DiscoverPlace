@@ -103,8 +103,9 @@ export function isOpenForVisit(
     };
   }
 
-  // En planning futur, openNow et nextCloseTime reflètent l'état actuel, pas l'heure planifiée
-  if (isScheduled) {
+  // En planning futur (> 2h), openNow et nextCloseTime reflètent l'état actuel, pas l'heure planifiée
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  if (isScheduled && arrival.getTime() - Date.now() > TWO_HOURS_MS) {
     return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
   }
 

@@ -30,23 +30,31 @@ const walkingOptions: { value: WalkingLevel; label: string }[] = [
   { value: "high", label: "J’aime marcher" }
 ];
 
+const TZ = "Asia/Tokyo";
+
 const formatTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: TZ }).format(new Date(iso));
 
 const formatDatetime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", {
     weekday: "short", day: "numeric", month: "short",
-    hour: "2-digit", minute: "2-digit"
+    hour: "2-digit", minute: "2-digit", timeZone: TZ
   }).format(new Date(iso));
+
+const tokyoDate = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { timeZone: TZ });
 
 // Interpréter la valeur datetime-local en JST (UTC+9), timezone fixe de l'app
 function datetimeToISO(value: string): string {
   return new Date(`${value}:00+09:00`).toISOString();
 }
 
-// Valeur minimum pour les inputs datetime-local : maintenant en JST
-function nowJSTLocal(): string {
-  return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Tokyo" }).replace(" ", "T").slice(0, 16);
+// Valeur minimum/maximum pour les inputs datetime-local en JST
+function nowJSTLocal(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toLocaleString("sv-SE", { timeZone: TZ }).replace(" ", "T").slice(0, 16);
+}
+
+function maxJSTLocal(): string {
+  return nowJSTLocal(100 * 24 * 60 * 60 * 1000);
 }
 
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
@@ -285,7 +293,7 @@ export function DiscoverApp() {
                 <div className="stop-card">
                   <div className="stop-meta">
                     <span>
-                      {new Date(stop.arrivalAt).toDateString() !== new Date(trip.startsAt).toDateString()
+                      {tokyoDate(stop.arrivalAt) !== tokyoDate(trip.startsAt)
                         ? formatDatetime(stop.arrivalAt)
                         : formatTime(stop.arrivalAt)}
                       –{formatTime(stop.departureAt)}
@@ -441,6 +449,7 @@ export function DiscoverApp() {
                       type="datetime-local"
                       value={selectedTime}
                       min={nowJSTLocal()}
+                      max={maxJSTLocal()}
                       onChange={(e) => setSelectedTime(e.target.value)}
                       style={{ marginTop: "10px", width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit", boxSizing: "border-box" }}
                     />
@@ -455,7 +464,8 @@ export function DiscoverApp() {
                   <input
                     type="datetime-local"
                     value={selectedTime}
-                    min={nowJSTLocal()}
+                    min={nowJSTLocal(durationMinutes * 60_000)}
+                    max={maxJSTLocal()}
                     onChange={(e) => setSelectedTime(e.target.value)}
                     style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit" }}
                   />

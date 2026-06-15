@@ -61,6 +61,7 @@ async function makeStopsAndLegs(
   const stops: TripStop[] = [];
   const legs: RouteLeg[] = [];
   let cursor = now;
+  const isScheduled = Boolean(request.departureAt || request.arrivalBy);
 
   const first = route.places[0];
   const outbound = await routing.route(
@@ -97,7 +98,9 @@ async function makeStopsAndLegs(
       departureAt: cursor.toISOString(),
       visitMinutes,
       reason: reranker.explain(place, request),
-      warning: place.openingHours ? undefined : "Horaires non vérifiés"
+      warning: isScheduled && ["cafe", "restaurant", "museum"].includes(place.category)
+        ? "Horaires à vérifier pour la date planifiée"
+        : place.openingHours ? undefined : "Horaires non vérifiés"
     });
   }
 
@@ -174,7 +177,11 @@ export async function generateTrip(
     eligible.slice(0, 3).map(async (anchor) => {
       const [nearby, returnMinutes] = await Promise.all([
         providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
-        returnMinutesFor(providers.routing, request.origin, anchor, now)
+        returnMinutesFor(providers.routing, request.origin, anchor,
+          request.arrivalBy
+            ? new Date(request.arrivalBy)
+            : new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+        )
       ]);
       if (
         returnMinutes === undefined ||

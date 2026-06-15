@@ -34,4 +34,12 @@ export const generateTripSchema = z
       return departure.getTime() > Date.now() - 5 * 60_000;
     },
     { message: "L'heure de départ calculée est dans le passé.", path: ["departureAt"] }
+  )
+  .refine(
+    (data) => {
+      const ts = data.departureAt ?? data.arrivalBy;
+      if (!ts) return true;
+      return new Date(ts).getTime() < Date.now() + 100 * 24 * 60 * 60 * 1000;
+    },
+    { message: "L'heure planifiée dépasse l'horizon de 100 jours des transports en commun.", path: ["departureAt"] }
   );
