@@ -63,9 +63,9 @@ function isTimeInBounds(value: string, mode: "departure" | "arrival", durationMs
   const now = Date.now();
   const HORIZON_MS = 100 * 24 * 60 * 60 * 1000;
   if (mode === "departure") {
-    return ts > now - 5 * 60_000 && ts + durationMs < now + HORIZON_MS;
+    return ts > now - 60_000 && ts + durationMs < now + HORIZON_MS;
   }
-  return ts > now + durationMs - 5 * 60_000 && ts < now + HORIZON_MS;
+  return ts > now + durationMs - 60_000 && ts < now + HORIZON_MS;
 }
 
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {

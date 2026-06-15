@@ -117,8 +117,14 @@ export function isOpenForVisit(
     if (!place.openingHours?.nextCloseTime) {
       return { allowed: true, warning: "Horaires de fermeture non confirmés" };
     }
+    // nextCloseTime = fin de la période *actuelle*, pas de la période de la visite planifiée.
+    // Si la visite est après la fermeture courante, le lieu peut rouvrir (ex: service du soir).
+    // On ne peut pas déterminer les horaires futurs ici → warning au lieu de rejet.
     const requiredOpenUntil = new Date(arrival.getTime() + (visitMinutes + 10) * 60_000);
-    return { allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil };
+    if (new Date(place.openingHours.nextCloseTime) < requiredOpenUntil) {
+      return { allowed: true, warning: "Horaires de fermeture à vérifier pour la visite planifiée" };
+    }
+    return { allowed: true };
   }
 
   // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle

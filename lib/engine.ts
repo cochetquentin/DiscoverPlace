@@ -194,13 +194,15 @@ export async function generateTrip(
           providers.routing,
           request.origin,
           anchor,
-          // departureAt : interroge le retour en partant à la deadline réelle (now + durationMinutes)
-          isScheduled && !request.arrivalBy
-            ? new Date(now.getTime() + request.durationMinutes * 60_000)
-            : undefined,
-          // arrivalBy : interroge avec arrivalTime pour trouver les trajets arrivant à temps
-          isScheduled && request.arrivalBy
-            ? new Date(request.arrivalBy)
+          undefined,
+          // departureAt : le deadline est l'heure d'arrivée souhaitée à l'origine (now + durationMinutes)
+          // arrivalBy : idem, on cherche un trajet arrivant avant la deadline
+          isScheduled
+            ? new Date(
+                request.arrivalBy
+                  ? new Date(request.arrivalBy).getTime()
+                  : now.getTime() + request.durationMinutes * 60_000
+              )
             : undefined
         )
       ]);
