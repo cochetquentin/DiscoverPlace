@@ -235,6 +235,9 @@ export class GoogleRoutingProvider implements RoutingProvider {
         .map((item) => [destinations[item.destinationIndex!].id, durationMinutes(item.duration)])
     );
     if (durations.size > 0) return durations;
+    // Pour un transit planifié à une heure précise, une réponse vide signifie
+    // aucun service disponible — ne pas estimer géométriquement.
+    if (mode === "TRANSIT" && departureTime) return new Map<string, number>();
 
     return new Map(
       destinations.map((destination) => [
@@ -286,12 +289,16 @@ export class GoogleRoutingProvider implements RoutingProvider {
       }
       throw error;
     });
-    const route =
-      response.routes?.[0] ?? {
-        duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
-        distanceMeters: distanceMeters(from, to),
-        polyline: undefined
-      };
+    const firstRoute = response.routes?.[0];
+    // Pour un transit planifié, une réponse vide = aucun service à cette heure
+    if (!firstRoute && mode === "TRANSIT" && departureTime) {
+      throw new Error("Aucun itinéraire de transport disponible à l'heure planifiée.");
+    }
+    const route = firstRoute ?? {
+      duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
+      distanceMeters: distanceMeters(from, to),
+      polyline: undefined
+    };
     return {
       mode,
       from: fromName,

@@ -16,8 +16,8 @@ export const generateTripSchema = z
     walking: z.enum(["low", "medium", "high"]),
     excludeTripId: z.string().optional(),
     excludedPlaceIds: z.array(z.string()).max(500).optional(),
-    departureAt: z.string().datetime().optional(),
-    arrivalBy: z.string().datetime().optional()
+    departureAt: z.string().datetime({ offset: true }).optional(),
+    arrivalBy: z.string().datetime({ offset: true }).optional()
   })
   .refine(
     (data) => !(data.departureAt && data.arrivalBy),

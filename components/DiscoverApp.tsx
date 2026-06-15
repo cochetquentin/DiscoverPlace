@@ -57,6 +57,17 @@ function maxJSTLocal(): string {
   return nowJSTLocal(100 * 24 * 60 * 60 * 1000);
 }
 
+function isTimeInBounds(value: string, mode: "departure" | "arrival", durationMs: number): boolean {
+  if (!value) return false;
+  const ts = new Date(`${value}:00+09:00`).getTime();
+  const now = Date.now();
+  const HORIZON_MS = 100 * 24 * 60 * 60 * 1000;
+  if (mode === "departure") {
+    return ts > now - 5 * 60_000 && ts + durationMs < now + HORIZON_MS;
+  }
+  return ts > now + durationMs - 5 * 60_000 && ts < now + HORIZON_MS;
+}
+
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
   const query = new URLSearchParams({
     api: "1",
@@ -498,7 +509,12 @@ export function DiscoverApp() {
             {error && <div className="error-card">{error}</div>}
             <button
               className="button primary generate"
-              disabled={loading || (timeMode === "arrival" && !selectedTime) || (timeMode === "departure" && !departureNow && !selectedTime)}
+              disabled={
+                loading ||
+                (timeMode === "arrival" && !selectedTime) ||
+                (timeMode === "departure" && !departureNow && !selectedTime) ||
+                (selectedTime !== "" && !isTimeInBounds(selectedTime, timeMode, durationMinutes * 60_000))
+              }
               onClick={() => generate()}
             >
               {loading ? <><span className="spinner" /> Je construis ta sortie…</> : "Trouve-moi une sortie"}

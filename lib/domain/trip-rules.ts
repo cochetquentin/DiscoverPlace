@@ -103,27 +103,23 @@ export function isOpenForVisit(
     };
   }
 
-  // En planning futur, openNow reflète l'instant courant, pas l'heure planifiée — on l'ignore
-  // et on s'appuie uniquement sur nextCloseTime pour valider la disponibilité.
-  if (!isScheduled) {
-    // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle
-    if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
-      return { allowed: false };
-    }
+  // En planning futur, openNow ET nextCloseTime reflètent la période courante de Google Places,
+  // pas la disponibilité à la date planifiée — bypass complet avec warning.
+  if (isScheduled) {
+    return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
+  }
+
+  // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle
+  if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+    return { allowed: false };
   }
 
   if (!place.openingHours?.nextCloseTime) {
-    return {
-      allowed: true,
-      warning: isScheduled ? "Horaires à vérifier pour la date planifiée" : "Horaires de fermeture non confirmés"
-    };
+    return { allowed: true, warning: "Horaires de fermeture non confirmés" };
   }
 
   const requiredOpenUntil = new Date(arrival.getTime() + (visitMinutes + 10) * 60_000);
   return {
-    allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil,
-    ...(isScheduled && new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil
-      ? { warning: "Horaires à vérifier pour la date planifiée" }
-      : {})
+    allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil
   };
 }
