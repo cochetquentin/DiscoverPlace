@@ -302,7 +302,9 @@ h1 {
   .action-dock.action-dock--bottom .button { flex: 1; min-width: 110px; font-size: .75rem; padding: 12px 8px; }
   .result-body { display: block; }
   .result-map-col { position: static; }
-  .trip-map, .map-fallback { height: 320px; border-radius: 20px; }
+  .trip-map, .map-fallback { border-radius: 20px; }
+  .result-map-col .trip-map,
+  .result-map-col .map-fallback { height: 320px; min-height: unset; }
   .metrics { grid-template-columns: repeat(2, 1fr); margin-bottom: 30px; }
   .stop { grid-template-columns: 32px 1fr; gap: 9px; }
   .stop::before { left: 15px; top: 32px; }
