@@ -234,14 +234,11 @@ export class GoogleRoutingProvider implements RoutingProvider {
           (item) =>
             item.destinationIndex !== undefined &&
             item.duration &&
-            (!item.condition || item.condition === "ROUTE_EXISTS")
+            item.condition !== "ROUTE_NOT_FOUND"
         )
         .map((item) => [destinations[item.destinationIndex!].id, durationMinutes(item.duration)])
     );
     if (durations.size > 0) return durations;
-    // Pour un transit planifié à une heure précise, une réponse vide signifie
-    // aucun service disponible — ne pas estimer géométriquement.
-    if (isScheduledTransit) return new Map<string, number>();
 
     return new Map(
       destinations.map((destination) => [
@@ -314,9 +311,6 @@ export class GoogleRoutingProvider implements RoutingProvider {
     });
     const firstRoute = response.routes?.[0];
     // Pour un transit planifié, une réponse vide = aucun service à cette heure
-    if (!firstRoute && isScheduledTransitRoute) {
-      throw new Error("Aucun itinéraire de transport disponible à l'heure planifiée.");
-    }
     const route = firstRoute ?? {
       duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
       distanceMeters: distanceMeters(from, to),
