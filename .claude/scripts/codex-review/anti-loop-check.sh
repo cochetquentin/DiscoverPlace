@@ -19,7 +19,7 @@ T_CODEX_I=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
 
 HEAD_SHA=$(gh pr view --json headRefOid -q .headRefOid)
 T_COMMIT=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.commit.committer.date' 2>/dev/null \
-  || git log -1 --format="%cI")
+  || date -u -d "$(git log -1 --format="%cI")" "+%Y-%m-%dT%H:%M:%SZ")
 
 # Max of T_CODEX_{R,C,I} via string comparison (ISO 8601 UTC is lexicographically ordered)
 T_CODEX_MAX=""

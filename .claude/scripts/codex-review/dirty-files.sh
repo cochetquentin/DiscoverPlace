@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
-# Outputs JSON {dirty: [...], new: [...]} of working tree state before corrections
+# Outputs JSON {dirty: [...], new: [...]} of working tree state before corrections.
+# Uses NUL-delimited git output to handle paths containing spaces correctly.
 set -euo pipefail
 
-json_array() {
-  local result=""
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    escaped=$(printf '%s' "$line" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    result="${result:+$result,}\"$escaped\""
-  done
-  echo "[$result]"
-}
+DIRTY_JSON="["
+NEW_JSON="["
+DIRTY_FIRST=true
+NEW_FIRST=true
 
-DIRTY=$(git status --porcelain | grep -v "^??" | awk '{print substr($0,4)}' || true)
-NEW=$(git status --porcelain | grep "^??" | awk '{print substr($0,4)}' || true)
+while IFS= read -r -d $'\0' entry; do
+  [[ -z "$entry" ]] && continue
+  status="${entry:0:2}"
+  path="${entry:3}"
+  escaped=$(printf '%s' "$path" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
-DIRTY_JSON=$(echo "$DIRTY" | json_array)
-NEW_JSON=$(echo "$NEW" | json_array)
+  if [[ "$status" == "??" ]]; then
+    $NEW_FIRST || NEW_JSON+=","
+    NEW_JSON+="\"$escaped\""
+    NEW_FIRST=false
+  else
+    $DIRTY_FIRST || DIRTY_JSON+=","
+    DIRTY_JSON+="\"$escaped\""
+    DIRTY_FIRST=false
+  fi
+done < <(git status --porcelain -z || true)
+
+DIRTY_JSON+="]"
+NEW_JSON+="]"
 
 echo "{\"dirty\":$DIRTY_JSON,\"new\":$NEW_JSON}"

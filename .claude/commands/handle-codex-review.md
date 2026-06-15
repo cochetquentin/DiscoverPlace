@@ -94,14 +94,19 @@ puis afficher le résumé final avec `@Codex review relancé : NON (aucun change
 
 ## Phase 7 — Rapport des corrections ignorées
 
-Si des remarques ont été ignorées, construire un JSON `[{"remark": "...", "reason": "..."}, ...]`
-et appeler :
+Si des remarques ont été ignorées, construire le tableau Markdown directement et le passer via stdin :
 
 ```bash
-bash .claude/scripts/codex-review/post-skipped.sh <PR> '<JSON>'
+bash .claude/scripts/codex-review/post-skipped.sh <PR> << 'MARKDOWN'
+## Corrections Codex ignorées
+
+| Remarque | Raison |
+|----------|--------|
+| [type] fichier:ligne — description | raison courte |
+MARKDOWN
 ```
 
-Le script poste un tableau Markdown sur la PR. Sans ignorées → ne rien poster.
+Le script poste le contenu reçu sur stdin. Sans ignorées → ne rien poster.
 
 ---
 
