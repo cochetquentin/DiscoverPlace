@@ -261,13 +261,24 @@ export class GoogleRoutingProvider implements RoutingProvider {
     toName: string,
     departureTime?: Date
   ): Promise<RouteLeg> {
-    const response = await googleFetch<{
+    const isScheduledTransitRoute = mode === "TRANSIT" && !!departureTime;
+    // Pour TRANSIT on demande les polylines au niveau des steps (plus fiable que le niveau route).
+    // Pour WALK la polyline route-level suffit.
+    const fieldMask = mode === "TRANSIT"
+      ? "routes.duration,routes.distanceMeters,routes.legs.steps.polyline,routes.legs.steps.travelMode"
+      : "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline";
+
+    type StepResponse = { polyline?: { encodedPolyline?: string }; travelMode?: string };
+    type RouteResponse = {
       routes?: {
         duration?: string;
         distanceMeters?: number;
         polyline?: { encodedPolyline?: string };
+        legs?: { steps?: StepResponse[] }[];
       }[];
-    }>(
+    };
+
+    const response = await googleFetch<RouteResponse>(
       `${GOOGLE_ROUTES}/directions/v2:computeRoutes`,
       {
         origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
@@ -275,42 +286,60 @@ export class GoogleRoutingProvider implements RoutingProvider {
         travelMode: mode,
         languageCode: "fr-FR",
         units: "METRIC",
-        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {})
+        // polylineQuality n'est valide que pour DRIVE/TWO_WHEELER, pas TRANSIT
+        ...(mode === "WALK" ? { polylineEncoding: "ENCODED_POLYLINE", polylineQuality: "HIGH_QUALITY" } : {}),
+        // Pour TRANSIT : toujours envoyer un departureTime (défaut = maintenant) pour que l'API
+        // retourne un vrai itinéraire avec géométrie plutôt qu'une réponse vide.
+        ...(mode === "TRANSIT"
+          ? { departureTime: (departureTime ?? new Date()).toISOString() }
+          : {})
       },
-      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+      fieldMask,
       "Routes API Compute Routes"
     ).catch((error) => {
       // Pour un transit planifié, ne pas substituer des estimations géométriques — même en cas de 429.
-      if (error instanceof GoogleApiError && error.status === 429 && !(mode === "TRANSIT" && departureTime)) {
+      if (error instanceof GoogleApiError && error.status === 429 && !isScheduledTransitRoute) {
         return {
           routes: [
             {
               duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
               distanceMeters: distanceMeters(from, to),
-              polyline: undefined
+              polyline: undefined,
+              legs: undefined
             }
           ]
-        };
+        } as RouteResponse;
       }
       throw error;
     });
     const firstRoute = response.routes?.[0];
     // Pour un transit planifié, une réponse vide = aucun service à cette heure
-    if (!firstRoute && mode === "TRANSIT" && departureTime) {
+    if (!firstRoute && isScheduledTransitRoute) {
       throw new Error("Aucun itinéraire de transport disponible à l'heure planifiée.");
     }
     const route = firstRoute ?? {
       duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
       distanceMeters: distanceMeters(from, to),
-      polyline: undefined
+      polyline: undefined,
+      legs: undefined
     };
+
+    // Extraire les polylines des steps TRANSIT pour un tracé fidèle côté carte
+    const stepPolylines = mode === "TRANSIT"
+      ? (route.legs ?? [])
+          .flatMap((leg) => leg.steps ?? [])
+          .map((step) => step.polyline?.encodedPolyline)
+          .filter((p): p is string => Boolean(p))
+      : undefined;
+
     return {
       mode,
       from: fromName,
       to: toName,
       durationMinutes: durationMinutes(route.duration),
       distanceMeters: route.distanceMeters,
-      polyline: route.polyline?.encodedPolyline
+      polyline: route.polyline?.encodedPolyline,
+      ...(stepPolylines?.length ? { stepPolylines } : {})
     };
   }
 }

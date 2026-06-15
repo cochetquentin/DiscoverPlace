@@ -63,6 +63,7 @@ export type RouteLeg = {
   durationMinutes: number;
   distanceMeters?: number;
   polyline?: string;
+  stepPolylines?: string[];
   instructions?: string[];
 };
 
