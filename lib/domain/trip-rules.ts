@@ -108,9 +108,11 @@ export function isOpenForVisit(
     if (arrival.getTime() - Date.now() > 4 * 3_600_000) {
       return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
     }
-    // Near-term planifié : openNow reste valide — si fermé maintenant, probablement fermé à l'arrivée.
+    // Near-term planifié : openNow indique l'état *actuel*, pas l'état à l'arrivée.
+    // Un café fermé à 8h peut très bien ouvrir à 10h avant qu'on y arrive à 11h.
+    // On laisse passer avec un avertissement plutôt que de rejeter.
     if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
-      return { allowed: false };
+      return { allowed: true, warning: "Horaires non vérifiés pour l'heure planifiée" };
     }
     if (!place.openingHours?.nextCloseTime) {
       return { allowed: true, warning: "Horaires de fermeture non confirmés" };

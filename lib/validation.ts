@@ -31,7 +31,7 @@ export const generateTripSchema = z
           ? new Date(new Date(data.arrivalBy).getTime() - data.durationMinutes * 60_000)
           : null;
       if (!departure) return true;
-      return departure.getTime() > Date.now() - 5 * 60_000;
+      return departure.getTime() > Date.now() - 60_000;
     },
     { message: "L'heure de départ calculée est dans le passé.", path: ["departureAt"] }
   )
