@@ -2,6 +2,7 @@
 # Usage: anti-loop-check.sh <REPO> <PR>
 # exit 0 + "T_TRIGGER=<iso>" on stdout → proceed
 # exit 1 + reason on stdout → STOP
+# ISO 8601 UTC strings are lexicographically comparable — no date conversion needed
 set -euo pipefail
 REPO=$1
 PR=$2
@@ -20,26 +21,16 @@ HEAD_SHA=$(gh pr view --json headRefOid -q .headRefOid)
 T_COMMIT=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.commit.committer.date' 2>/dev/null \
   || git log -1 --format="%cI")
 
-RESULT=$(uv run python -c "
-from datetime import datetime, timezone
+# Max of T_CODEX_{R,C,I} via string comparison (ISO 8601 UTC is lexicographically ordered)
+T_CODEX_MAX=""
+for t in "$T_CODEX_R" "$T_CODEX_C" "$T_CODEX_I"; do
+  [[ -n "$t" && "$t" > "$T_CODEX_MAX" ]] && T_CODEX_MAX="$t"
+done
 
-def e(s):
-    s = s.strip() if s else ''
-    return int(datetime.fromisoformat(s.replace('Z', '+00:00')).timestamp()) if s else 0
-
-t_trigger = e('$T_TRIGGER')
-t_codex = max(e('$T_CODEX_R'), e('$T_CODEX_C'), e('$T_CODEX_I'))
-t_commit = e('$T_COMMIT')
-
-if t_trigger > 0 and t_trigger > t_commit and t_codex < t_trigger:
-    print('STOP')
-else:
-    print('T_TRIGGER=' + '$T_TRIGGER')
-")
-
-if [ "$RESULT" = "STOP" ]; then
+# Anti-loop: @Codex review already posted after last commit and Codex hasn't responded yet
+if [[ -n "$T_TRIGGER" && "$T_TRIGGER" > "$T_COMMIT" && "$T_CODEX_MAX" < "$T_TRIGGER" ]]; then
   echo "Anti-boucle : @Codex review déjà posté après le dernier commit et Codex n'a pas encore répondu."
   exit 1
 fi
 
-echo "$RESULT"
+echo "T_TRIGGER=$T_TRIGGER"

@@ -1,28 +1,13 @@
 #!/usr/bin/env bash
-# Usage: post-skipped.sh <PR> '<JSON array of {remark, reason}>'
-# Posts a GitHub comment listing intentionally skipped corrections.
-# Does nothing if the array is empty.
+# Usage: bash post-skipped.sh <PR> << 'EOF'
+#   markdown table body
+# EOF
+# Posts a GitHub comment with the skipped corrections table.
+# Does nothing if stdin is empty.
 set -euo pipefail
 PR=$1
-DATA=$2
+BODY=$(cat)
 
-ROWS=$(uv run python -c "
-import json, sys
-items = json.loads('''$DATA''')
-if not items:
-    sys.exit(0)
-for item in items:
-    print('| ' + item['remark'] + ' | ' + item['reason'] + ' |')
-")
-
-if [ -z "$ROWS" ]; then
-  exit 0
-fi
-
-BODY="## Corrections Codex ignorées
-
-| Remarque | Raison |
-|----------|--------|
-$ROWS"
+[[ -z "$BODY" ]] && exit 0
 
 gh pr comment "$PR" --body "$BODY"
