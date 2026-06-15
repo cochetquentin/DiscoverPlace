@@ -103,11 +103,18 @@ export function isOpenForVisit(
     };
   }
 
-  // En planning futur (> 4h), openNow ET nextCloseTime reflètent la période courante
-  // de Google Places, pas la disponibilité à la date planifiée — bypass avec warning.
-  // Pour un départ imminent (≤ 4h), les données actuelles restent pertinentes.
-  if (isScheduled && arrival.getTime() - Date.now() > 4 * 3_600_000) {
-    return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
+  if (isScheduled) {
+    // openNow reflète l'état actuel, pas la disponibilité à l'heure planifiée — ne jamais l'utiliser.
+    // Pour un départ lointain (> 4h), les données horaires ne sont plus pertinentes du tout.
+    if (arrival.getTime() - Date.now() > 4 * 3_600_000) {
+      return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
+    }
+    // Near-term planifié : nextCloseTime reste valide si l'arrivée est dans la plage courante.
+    if (!place.openingHours?.nextCloseTime) {
+      return { allowed: true, warning: "Horaires de fermeture non confirmés" };
+    }
+    const requiredOpenUntil = new Date(arrival.getTime() + (visitMinutes + 10) * 60_000);
+    return { allowed: new Date(place.openingHours.nextCloseTime) >= requiredOpenUntil };
   }
 
   // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle

@@ -278,7 +278,8 @@ export class GoogleRoutingProvider implements RoutingProvider {
       "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
       "Routes API Compute Routes"
     ).catch((error) => {
-      if (error instanceof GoogleApiError && error.status === 429) {
+      // Pour un transit planifié, ne pas substituer des estimations géométriques — même en cas de 429.
+      if (error instanceof GoogleApiError && error.status === 429 && !(mode === "TRANSIT" && departureTime)) {
         return {
           routes: [
             {
