@@ -6,6 +6,28 @@ import { useEffect, useRef, useState } from "react";
 
 type Props = { trip: TripPlan };
 
+type MarkerIcon = {
+  path: number | string;
+  fillColor: string;
+  fillOpacity: number;
+  strokeColor: string;
+  strokeWeight: number;
+  scale: number;
+};
+
+type MarkerLabel = {
+  text: string;
+  color: string;
+  fontWeight: string;
+  fontSize: string;
+};
+
+type PolylineIcon = {
+  icon: { path: string; strokeOpacity: number; scale: number; strokeColor: string };
+  offset: string;
+  repeat: string;
+};
+
 declare global {
   interface Window {
     // Google Maps is loaded lazily only when a browser API key exists.
@@ -18,11 +40,23 @@ declare global {
           fitBounds(bounds: { extend(point: Coordinate): void }): void;
           addListener(event: string, handler: (e: { latLng?: { lat(): number; lng(): number } }) => void): void;
         };
-        Marker: new (options: Record<string, unknown>) => {
+        Marker: new (options: {
+          position: Coordinate;
+          map: unknown;
+          icon?: MarkerIcon;
+          label?: MarkerLabel;
+        }) => {
           setPosition(pos: { lat: number; lng: number }): void;
           addListener(event: string, handler: (e?: { latLng?: { lat(): number; lng(): number } }) => void): void;
         };
-        Polyline: new (options: Record<string, unknown>) => unknown;
+        Polyline: new (options: {
+          path: Coordinate[];
+          map: unknown;
+          strokeColor: string;
+          strokeOpacity: number;
+          strokeWeight: number;
+          icons?: PolylineIcon[];
+        }) => unknown;
         LatLngBounds: new () => {
           extend(point: Coordinate): void;
         };
@@ -36,6 +70,21 @@ declare global {
   }
 }
 
+function makeMarkerIcon(color: string): MarkerIcon {
+  return {
+    path: 0, // google.maps.SymbolPath.CIRCLE
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: "#ffffff",
+    strokeWeight: 2,
+    scale: 10,
+  };
+}
+
+function makeMarkerLabel(text: string): MarkerLabel {
+  return { text, color: "#ffffff", fontWeight: "bold", fontSize: "12px" };
+}
+
 export function TripMap({ trip }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [fallback, setFallback] = useState(!hasMapsKey);
@@ -45,11 +94,7 @@ export function TripMap({ trip }: Props) {
     loadGoogleMaps()
       .then(() => {
         if (!active || !ref.current || !window.google?.maps) return;
-        const points = [
-          trip.request.origin,
-          ...trip.stops.map((stop) => stop.place.coordinate),
-          trip.request.origin
-        ];
+
         const map = new window.google.maps.Map(ref.current, {
           center: trip.stops[0]?.place.coordinate ?? trip.request.origin,
           zoom: 13,
@@ -57,41 +102,53 @@ export function TripMap({ trip }: Props) {
           mapId: "DEMO_MAP_ID"
         });
         const bounds = new window.google.maps.LatLngBounds();
-        points.forEach((point, index) => {
-          bounds.extend(point);
-          if (index < points.length - 1) {
-            new window.google!.maps.Marker({
-              position: point,
-              map,
-              label: index === 0 ? "D" : String(index)
-            });
-          }
-        });
-        const geometry = window.google.maps.geometry;
-        const decodedSegments = trip.legs
-          .map((leg) => leg.polyline && geometry?.encoding.decodePath(leg.polyline))
-          .filter((path): path is Coordinate[] => Boolean(path?.length));
 
-        if (decodedSegments.length > 0) {
-          decodedSegments.forEach((path) => {
-            path.forEach((point) => bounds.extend(point));
-            new window.google!.maps.Polyline({
-              path,
-              map,
-              strokeColor: "#f55b3e",
-              strokeOpacity: 0.9,
-              strokeWeight: 4
-            });
-          });
-        } else {
-          new window.google.maps.Polyline({
-            path: points,
+        // Marqueur de départ/arrivée (boucle) — rouge
+        bounds.extend(trip.request.origin);
+        new window.google!.maps.Marker({
+          position: trip.request.origin,
+          map,
+          icon: makeMarkerIcon("#ef4444"),
+          label: makeMarkerLabel("D"),
+        });
+
+        // Marqueurs des stops — indigo
+        trip.stops.forEach((stop, index) => {
+          bounds.extend(stop.place.coordinate);
+          new window.google!.maps.Marker({
+            position: stop.place.coordinate,
             map,
-            strokeColor: "#f55b3e",
-            strokeOpacity: 0.45,
-            strokeWeight: 4
+            icon: makeMarkerIcon("#6366f1"),
+            label: makeMarkerLabel(String(index + 1)),
           });
-        }
+        });
+
+        const geometry = window.google.maps.geometry;
+        const points = [
+          trip.request.origin,
+          ...trip.stops.map((s) => s.place.coordinate),
+          trip.request.origin,
+        ];
+
+        // Seuls les segments à pied sont tracés — les segments TRANSIT n'ont pas
+        // de données de géométrie disponibles (restriction Google Maps pour le Japon).
+        trip.legs.forEach((leg, i) => {
+          if (leg.mode !== "WALK") return;
+
+          const path = leg.polyline && geometry
+            ? geometry.encoding.decodePath(leg.polyline)
+            : [points[i]!, points[i + 1]!].filter(Boolean);
+          if (!path.length) return;
+          path.forEach((pt) => bounds.extend(pt));
+          new window.google!.maps.Polyline({
+            path,
+            map,
+            strokeColor: "#22c55e",
+            strokeOpacity: leg.polyline ? 1 : 0.6,
+            strokeWeight: 5,
+          });
+        });
+
         map.fitBounds(bounds);
       })
       .catch(() => setFallback(true));
