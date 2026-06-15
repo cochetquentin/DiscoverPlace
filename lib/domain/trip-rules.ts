@@ -104,12 +104,14 @@ export function isOpenForVisit(
   }
 
   if (isScheduled) {
-    // openNow reflète l'état actuel, pas la disponibilité à l'heure planifiée — ne jamais l'utiliser.
-    // Pour un départ lointain (> 4h), les données horaires ne sont plus pertinentes du tout.
+    // Pour un départ lointain (> 4h), les données horaires actuelles ne sont pas pertinentes.
     if (arrival.getTime() - Date.now() > 4 * 3_600_000) {
       return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
     }
-    // Near-term planifié : nextCloseTime reste valide si l'arrivée est dans la plage courante.
+    // Near-term planifié : openNow reste valide — si fermé maintenant, probablement fermé à l'arrivée.
+    if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+      return { allowed: false };
+    }
     if (!place.openingHours?.nextCloseTime) {
       return { allowed: true, warning: "Horaires de fermeture non confirmés" };
     }

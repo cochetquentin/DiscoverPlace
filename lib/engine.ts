@@ -117,6 +117,7 @@ async function makeStopsAndLegs(
     "Position actuelle",
     isScheduled ? cursor : undefined
   ).catch((error) => {
+    if (error instanceof GoogleApiError) throw error;
     throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire de retour disponible.");
   });
   legs.push(inbound);
@@ -127,7 +128,8 @@ async function returnMinutesFor(
   routing: ReturnType<typeof createProviders>["routing"],
   origin: GenerateTripRequest["origin"],
   anchor: PlaceCandidate,
-  departureTime?: Date
+  departureTime?: Date,
+  arrivalTime?: Date
 ) {
   const originCandidate: PlaceCandidate = {
     id: "origin",
@@ -138,7 +140,7 @@ async function returnMinutesFor(
     types: [],
     signals: { unusual: 0, quality: 0, descriptive: 0, chainPenalty: 0 }
   };
-  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT", departureTime)).get("origin");
+  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT", departureTime, arrivalTime)).get("origin");
 }
 
 export async function generateTrip(
@@ -192,12 +194,13 @@ export async function generateTrip(
           providers.routing,
           request.origin,
           anchor,
-          isScheduled
-            ? request.arrivalBy
-              // Pour arrivalBy : on interroge le départ le plus tardif encore dans les limites.
-              // computeRouteMatrix ne supporte pas arrivalTime — approximation par soustraction.
-              ? new Date(new Date(request.arrivalBy).getTime() - transitLimit * 60_000)
-              : new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+          // departureAt : interroge depuis l'heure de retour estimée (75% du budget)
+          isScheduled && !request.arrivalBy
+            ? new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+            : undefined,
+          // arrivalBy : interroge avec arrivalTime pour trouver les trajets arrivant à temps
+          isScheduled && request.arrivalBy
+            ? new Date(request.arrivalBy)
             : undefined
         )
       ]);

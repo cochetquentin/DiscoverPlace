@@ -21,7 +21,8 @@ export interface RoutingProvider {
     origin: Coordinate,
     destinations: PlaceCandidate[],
     mode: "TRANSIT" | "WALK",
-    departureTime?: Date
+    departureTime?: Date,
+    arrivalTime?: Date
   ): Promise<Map<string, number>>;
   route(
     from: Coordinate,

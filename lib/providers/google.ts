@@ -189,8 +189,9 @@ function estimatedTransitMinutes(from: Coordinate, to: Coordinate): number {
 }
 
 export class GoogleRoutingProvider implements RoutingProvider {
-  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date) {
+  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date, arrivalTime?: Date) {
     if (destinations.length === 0) return new Map<string, number>();
+    const isScheduledTransit = mode === "TRANSIT" && (!!departureTime || !!arrivalTime);
     const response = await googleFetch<
       { destinationIndex?: number; duration?: string; condition?: string }[]
     >(
@@ -208,14 +209,15 @@ export class GoogleRoutingProvider implements RoutingProvider {
           }
         })),
         travelMode: mode,
-        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {})
+        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {}),
+        ...(mode === "TRANSIT" && arrivalTime && !departureTime ? { arrivalTime: arrivalTime.toISOString() } : {})
       },
       "destinationIndex,duration,condition",
       "Routes API Compute Route Matrix"
     ).catch((error) => {
       // Pour un transit planifié, ne jamais substituer des estimations géométriques
       // à des données de trafic réelles — même en cas de 429.
-      if (error instanceof GoogleApiError && error.status === 429 && !(mode === "TRANSIT" && departureTime)) {
+      if (error instanceof GoogleApiError && error.status === 429 && !isScheduledTransit) {
         return destinations.map((destination, destinationIndex) => ({
           destinationIndex,
           duration: `${(mode === "WALK"
@@ -239,7 +241,7 @@ export class GoogleRoutingProvider implements RoutingProvider {
     if (durations.size > 0) return durations;
     // Pour un transit planifié à une heure précise, une réponse vide signifie
     // aucun service disponible — ne pas estimer géométriquement.
-    if (mode === "TRANSIT" && departureTime) return new Map<string, number>();
+    if (isScheduledTransit) return new Map<string, number>();
 
     return new Map(
       destinations.map((destination) => [

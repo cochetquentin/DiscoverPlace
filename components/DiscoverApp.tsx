@@ -158,6 +158,11 @@ export function DiscoverApp() {
   };
 
   const generate = async (excludeTripId?: string) => {
+    // Re-valider au moment de la soumission : le bouton peut rester actif alors que l'heure a expiré
+    if (selectedTime && !isTimeInBounds(selectedTime, timeMode, durationMinutes * 60_000)) {
+      setError("L'heure sélectionnée n'est plus valide. Choisis une nouvelle heure.");
+      return;
+    }
     setLoading(true);
     setError("");
     const excludedPlaceIds = history
@@ -307,7 +312,9 @@ export function DiscoverApp() {
                       {tokyoDate(stop.arrivalAt) !== tokyoDate(trip.startsAt)
                         ? formatDatetime(stop.arrivalAt)
                         : formatTime(stop.arrivalAt)}
-                      –{formatTime(stop.departureAt)}
+                      –{tokyoDate(stop.departureAt) !== tokyoDate(stop.arrivalAt)
+                        ? formatDatetime(stop.departureAt)
+                        : formatTime(stop.departureAt)}
                     </span>
                     <span>{stop.visitMinutes} min</span>
                   </div>
