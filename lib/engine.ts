@@ -71,7 +71,9 @@ async function makeStopsAndLegs(
     "Position actuelle",
     first.name,
     now
-  );
+  ).catch((error) => {
+    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire disponible.");
+  });
   legs.push(outbound);
   cursor = addMinutes(cursor, outbound.durationMinutes);
 
@@ -112,7 +114,9 @@ async function makeStopsAndLegs(
     last.name,
     "Position actuelle",
     cursor
-  );
+  ).catch((error) => {
+    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire de retour disponible.");
+  });
   legs.push(inbound);
   return { stops, legs };
 }
@@ -151,7 +155,12 @@ export async function generateTrip(
   const anchorCount = anchors.length;
   const anchorsForRouting = anchors.slice(0, 12);
   const isScheduled = Boolean(request.departureAt || request.arrivalBy);
-  const outbound = await providers.routing.matrix(request.origin, anchorsForRouting, "TRANSIT", now);
+  const outbound = await providers.routing.matrix(
+    request.origin,
+    anchorsForRouting,
+    "TRANSIT",
+    isScheduled ? now : undefined
+  );
   if (anchorsForRouting.length === 0) {
     throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
   }
@@ -177,8 +186,15 @@ export async function generateTrip(
     eligible.slice(0, 3).map(async (anchor) => {
       const [nearby, returnMinutes] = await Promise.all([
         providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
-        returnMinutesFor(providers.routing, request.origin, anchor,
-          new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+        returnMinutesFor(
+          providers.routing,
+          request.origin,
+          anchor,
+          isScheduled
+            ? request.arrivalBy
+              ? new Date(request.arrivalBy)
+              : new Date(now.getTime() + request.durationMinutes * 0.75 * 60_000)
+            : undefined
         )
       ]);
       if (

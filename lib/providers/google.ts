@@ -213,7 +213,9 @@ export class GoogleRoutingProvider implements RoutingProvider {
       "destinationIndex,duration,condition",
       "Routes API Compute Route Matrix"
     ).catch((error) => {
-      if (error instanceof GoogleApiError && error.status === 429) {
+      // Pour un transit planifié, ne jamais substituer des estimations géométriques
+      // à des données de trafic réelles — même en cas de 429.
+      if (error instanceof GoogleApiError && error.status === 429 && !(mode === "TRANSIT" && departureTime)) {
         return destinations.map((destination, destinationIndex) => ({
           destinationIndex,
           duration: `${(mode === "WALK"

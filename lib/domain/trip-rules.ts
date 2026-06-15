@@ -103,9 +103,10 @@ export function isOpenForVisit(
     };
   }
 
-  // En planning futur, openNow ET nextCloseTime reflètent la période courante de Google Places,
-  // pas la disponibilité à la date planifiée — bypass complet avec warning.
-  if (isScheduled) {
+  // En planning futur (> 4h), openNow ET nextCloseTime reflètent la période courante
+  // de Google Places, pas la disponibilité à la date planifiée — bypass avec warning.
+  // Pour un départ imminent (≤ 4h), les données actuelles restent pertinentes.
+  if (isScheduled && arrival.getTime() - Date.now() > 4 * 3_600_000) {
     return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
   }
 
