@@ -37,14 +37,6 @@ Solutions simples :
 4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel.
 5. Ajouter `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` pour le logging des trips.
 
-Pour tester le soir sans que les horaires et transports soient trop stricts, garde :
-
-```env
-RELAXED_TRIP_PLANNING=true
-```
-
-Pour un comportement plus réaliste en production, mets `false`.
-
 ## Architecture
 
 - `lib/engine.ts` orchestre découverte, faisabilité, beam search, reranking et validation finale.

@@ -1,4 +1,3 @@
-import { config } from "@/lib/config";
 import type {
   DurationMinutes,
   Mood,
@@ -46,10 +45,6 @@ export function safetyMargin(duration: DurationMinutes): number {
 
 export function maxTransitLeg(duration: DurationMinutes): number {
   return Math.min(90, Math.floor(duration * 0.25));
-}
-
-export function relaxedMaxTransitLeg(duration: DurationMinutes): number {
-  return Math.min(120, Math.floor(duration * 0.45));
 }
 
 export function visitDuration(category: PlaceCategory): number {
@@ -111,7 +106,7 @@ export function isOpenForVisit(
     // Near-term planifié : openNow indique l'état *actuel*, pas l'état à l'arrivée.
     // Un café fermé à 8h peut très bien ouvrir à 10h avant qu'on y arrive à 11h.
     // On laisse passer avec un avertissement plutôt que de rejeter.
-    if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+    if (place.openingHours?.openNow === false) {
       return { allowed: true, warning: "Horaires non vérifiés pour l'heure planifiée" };
     }
     if (!place.openingHours?.nextCloseTime) {
@@ -127,8 +122,7 @@ export function isOpenForVisit(
     return { allowed: true };
   }
 
-  // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle
-  if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+  if (place.openingHours?.openNow === false) {
     return { allowed: false };
   }
 

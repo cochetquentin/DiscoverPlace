@@ -1,11 +1,9 @@
 import { buildRoutes } from "@/lib/domain/beam-search";
-import { config } from "@/lib/config";
 import { deduplicatePlaces } from "@/lib/domain/scoring";
 import {
   effectiveVisitDuration,
   maxTransitLeg,
   nearbyRadius,
-  relaxedMaxTransitLeg,
   safetyMargin
 } from "@/lib/domain/trip-rules";
 import { createProviders } from "@/lib/providers/factory";
@@ -26,11 +24,7 @@ const addMinutes = (date: Date, minutes: number) =>
   new Date(date.getTime() + minutes * 60_000);
 
 function planningNow() {
-  const now = new Date();
-  if (!config.relaxedTripPlanning) return now;
-  const relaxed = new Date(now);
-  relaxed.setHours(11, 0, 0, 0);
-  return relaxed;
+  return new Date();
 }
 
 function resolveNow(request: GenerateTripRequest): Date {
@@ -148,9 +142,7 @@ export async function generateTrip(
 ): Promise<{ plan: TripPlan; stats: EngineStats }> {
   const providers = createProviders();
   const now = resolveNow(request);
-  const transitLimit = config.relaxedTripPlanning
-    ? relaxedMaxTransitLeg(request.durationMinutes)
-    : maxTransitLeg(request.durationMinutes);
+  const transitLimit = maxTransitLeg(request.durationMinutes);
   const visitedIds = new Set(request.excludedPlaceIds ?? []);
   const rejectedIds = new Set(request.excludedPlaceIds ?? []);
 
@@ -170,11 +162,7 @@ export async function generateTrip(
   }
 
   const eligible = anchorsForRouting
-    .filter((anchor) =>
-      config.relaxedTripPlanning
-        ? outbound.has(anchor.id)
-        : (outbound.get(anchor.id) ?? Infinity) <= transitLimit
-    )
+    .filter((anchor) => (outbound.get(anchor.id) ?? Infinity) <= transitLimit)
     .sort((a, b) => (outbound.get(a.id) ?? Infinity) - (outbound.get(b.id) ?? Infinity))
     .slice(0, 10);
 
@@ -206,10 +194,7 @@ export async function generateTrip(
             : undefined
         )
       ]);
-      if (
-        returnMinutes === undefined ||
-        (!config.relaxedTripPlanning && returnMinutes > transitLimit)
-      ) {
+      if (returnMinutes === undefined || returnMinutes > transitLimit) {
         return [];
       }
       const verifiedNearby = await providers.verifier.verify(nearby);
@@ -252,7 +237,7 @@ export async function generateTrip(
   const visitMinutes = stops.reduce((sum, stop) => sum + stop.visitMinutes, 0);
   const totalMinutes = transitMinutes + walkingMinutes + visitMinutes;
   const margin = safetyMargin(request.durationMinutes);
-  if (!config.relaxedTripPlanning && totalMinutes > request.durationMinutes - margin) {
+  if (totalMinutes > request.durationMinutes - margin) {
     throw new NoReliableTripError("Le trajet final ne laisse pas assez de marge pour rentrer.");
   }
 
