@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(bash .claude/scripts:*)",
-      "Bash(uv run --locked python -m pytest:*)",
       "Bash(git:*)",
       "Bash(rtk:*)",
       "Bash(node_modules/.bin/tsc:*)",

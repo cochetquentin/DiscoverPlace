@@ -67,14 +67,13 @@ Ne pas modifier les tests pour forcer le coverage — corriger le code de produc
 ## Phase 5 — Tests
 
 ```bash
-uv run --locked python -m pytest --cov=. --cov-fail-under=80 tests/ -v
+node_modules/.bin/vitest run
 ```
 
 - **Succès** → continuer.
 - **Échec** → diagnostiquer, corriger, relancer (max 2 tentatives).
   Si toujours KO : rollback des fichiers trackés modifiés dans ce cycle (`git checkout -- <fichiers>`)
   et suppression des fichiers non-trackés créés (`rm`), sans toucher `dirty[]` ni `new[]`.
-- **Coverage < 80%** → ajouter des tests pour le code modifié.
 
 ---
 
