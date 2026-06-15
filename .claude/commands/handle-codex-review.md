@@ -1,195 +1,139 @@
 # handle-codex-review
 
 Automatise le cycle de review Codex ↔ Claude Code sur la PR courante.
+La logique shell est déléguée aux scripts dans `.claude/scripts/codex-review/`.
 
 ---
 
-## Phase 1 — Identifier la PR et le repo
+## Phase 1 — Info PR
 
 ```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-PR_NUMBER=$(gh pr view --json number -q .number)
-STATE=$(gh pr view --json state -q .state)
-TITLE=$(gh pr view --json title -q .title)
-HEAD_BRANCH=$(git branch --show-current)
+bash .claude/scripts/codex-review/pr-info.sh
 ```
 
-Extraire depuis ces résultats : `REPO`, `PR_NUMBER`, `HEAD_BRANCH`, `STATE`.
-Si `STATE != "OPEN"` → arrêter : "PR fermée ou mergée."
-Mémoriser ces variables pour toutes les étapes suivantes.
+Extraire `repo`, `pr`, `state`, `title`, `branch` depuis le JSON retourné.
+Si `state != "OPEN"` → arrêter : "PR fermée ou mergée."
 
 ---
 
-## Phase 2 — Protection anti-boucle
+## Phase 2 — Anti-boucle
 
 ```bash
-# T_TRIGGER : dernier commentaire dont le body est EXACTEMENT "@Codex review" (trim)
-# Évite que des mentions incidentes (ex: "j'ai posté @Codex review hier") deviennent le trigger
-T_TRIGGER=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '.[] | select(.body | ltrimstr("\n") | rtrimstr("\n") | ltrimstr("\r") | rtrimstr("\r") | ascii_downcase | . == "@codex review") | .created_at' | tail -1)
-
-# T_CODEX : dernière réponse Codex parmi les 3 endpoints (reviews formelles, inline, issue comments)
-T_CODEX_R=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
-  --jq '.[] | select(.user.login == "chatgpt-codex-connector[bot]") | .submitted_at' | tail -1)
-T_CODEX_C=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/comments" \
-  --jq '.[] | select(.user.login == "chatgpt-codex-connector[bot]") | .created_at' | tail -1)
-T_CODEX_I=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '.[] | select(.user.login == "chatgpt-codex-connector[bot]") | .created_at' | tail -1)
-
-# T_COMMIT : via l'API commits sur le headRefOid (pas de limite 100 commits)
-HEAD_SHA=$(gh pr view --json headRefOid -q .headRefOid)
-T_COMMIT=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.committer.date' 2>/dev/null \
-  || git log -1 --format="%cI")
-
-# Normaliser en epoch UTC pour comparaison cross-timezone (GitHub = UTC Z, git = offset local)
-T_TRIGGER_E=$(uv run python -c "
-from datetime import datetime,timezone
-s='$T_TRIGGER'
-print(int(datetime.fromisoformat(s.replace('Z','+00:00')).timestamp()) if s else 0)
-")
-T_CODEX_E=$(uv run python -c "
-from datetime import datetime,timezone
-def e(s): return int(datetime.fromisoformat(s.strip().replace('Z','+00:00')).timestamp()) if s.strip() else 0
-print(max(e('$T_CODEX_R'), e('$T_CODEX_C'), e('$T_CODEX_I')))
-")
-T_COMMIT_E=$(uv run python -c "
-from datetime import datetime,timezone
-s='$T_COMMIT'
-print(int(datetime.fromisoformat(s.replace('Z','+00:00')).timestamp()))
-")
+bash .claude/scripts/codex-review/anti-loop-check.sh <REPO> <PR>
 ```
 
-Logique :
-1. `T_TRIGGER_E` = epoch UTC du dernier commentaire contenant `@Codex review`.
-2. `T_CODEX_E` = epoch UTC de la dernière réponse Codex (reviews formelles **+ inline + issue comments**).
-3. `T_COMMIT_E` = epoch UTC du dernier commit du PR (remote).
-4. Si `T_TRIGGER_E > 0` ET `T_TRIGGER_E > T_COMMIT_E` ET `T_CODEX_E < T_TRIGGER_E` → **STOP** :
-   "Anti-boucle : `@Codex review` déjà posté après le dernier commit et Codex n'a pas encore répondu."
-5. Sinon → continuer.
+- exit 1 → afficher la raison et arrêter.
+- exit 0 → mémoriser `T_TRIGGER` (valeur après `T_TRIGGER=` dans la sortie).
 
 ---
 
-## Phase 3 — Récupérer les remarques Codex
+## Phase 3 — Remarques Codex
 
 ```bash
-# --paginate --jq applique le filtre à chaque page et concatène les résultats
-# Filtrer sur le cycle courant uniquement (depuis T_TRIGGER) pour éviter de retraiter
-# des remarques déjà corrigées dans des cycles précédents.
-gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.submitted_at > \"${T_TRIGGER}\")"
-gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/comments" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"${T_TRIGGER}\")"
-gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-  --jq ".[] | select(.user.login == \"chatgpt-codex-connector[bot]\") | select(.created_at > \"${T_TRIGGER}\")"
+bash .claude/scripts/codex-review/get-comments.sh <REPO> <PR> <T_TRIGGER>
 ```
 
-Filtrer uniquement les objets dont `user.login` est exactement `chatgpt-codex-connector[bot]`
-(identité exacte du bot Codex — ne pas utiliser un substring match pour éviter l'usurpation).
-Exclure les `body` vides ou contenant seulement `@Codex review`.
-Seules les remarques postées **après `T_TRIGGER`** sont traitées (cycle courant).
-
-Classer par priorité :
-1. Reviews formelles avec state `CHANGES_REQUESTED`
-2. Commentaires inline (associés à un fichier:ligne)
+Classer les remarques par priorité :
+1. Reviews formelles `state=CHANGES_REQUESTED`
+2. Commentaires inline (type=inline, file+line disponibles)
 3. Commentaires généraux
 
-Si aucune remarque trouvée → afficher "Aucune remarque Codex sur cette PR." et s'arrêter.
+Si aucune remarque → afficher "Aucune remarque Codex sur cette PR." et arrêter.
 
 Sinon, **afficher un résumé des points à traiter** avant toute modification.
 
 ---
 
-## Phase 4 — Appliquer les corrections
-
-**Avant toute modification**, enregistrer l'état du working tree :
+## Phase 4 — Snapshot + corrections
 
 ```bash
-DIRTY_FILES=$(git status --porcelain | awk '{print substr($0,4)}')
-NEW_FILES=$(git status --porcelain | awk '/^\?\?/{print substr($0,4)}')
+bash .claude/scripts/codex-review/dirty-files.sh
 ```
 
-Ces fichiers (`DIRTY_FILES`) étaient déjà modifiés avant ce workflow. `NEW_FILES` liste
-les fichiers non-trackés préexistants. Si Phase 5 échoue, le rollback :
-- **ne touche jamais** `DIRTY_FILES` ni `NEW_FILES`
-- supprime les nouveaux fichiers créés par ce workflow (`rm` sur les untracked post-workflow)
-- restaure les fichiers trackés modifiés par ce workflow (`git checkout -- <fichiers>`)
+Mémoriser `dirty[]` et `new[]` (état du working tree avant toute modification).
 
 Pour chaque remarque (dans l'ordre de priorité) :
 
 1. Lire le fichier concerné pour comprendre le contexte actuel.
-2. **Évaluer** : la remarque est-elle valide ? Déjà corrigée par un commit précédent ?
-3. Si le fichier à modifier est dans `DIRTY_FILES` → **ignorer** la correction (évite de
-   mélanger les changements du workflow avec des modifications locales préexistantes).
-4. Si **valide** → appliquer la correction, noter : `[APPLIQUÉ] fichier:ligne — description`.
-5. Si **invalide / non applicable** → ignorer avec justification courte.
+2. **Évaluer** : la remarque est-elle valide ? Déjà corrigée dans un commit précédent ?
+3. Si le fichier est dans `dirty[]` **ou** `new[]` → **ignorer** (évite de mélanger avec des modifications locales préexistantes, trackées ou non).
+4. Si **valide** → appliquer, noter `[APPLIQUÉ] fichier:ligne — description`.
+5. Si **invalide / non applicable** → ignorer, noter `[IGNORÉ] description — raison courte`.
 
-Ne pas modifier les tests pour faire passer une règle de coverage — corriger le code de production.
+Ne pas modifier les tests pour forcer le coverage — corriger le code de production.
 
 ---
 
 ## Phase 5 — Tests
 
 ```bash
-uv run --locked python -m pytest --cov=. --cov-fail-under=80 tests/ -v
+node_modules/.bin/vitest run
 ```
 
 - **Succès** → continuer.
 - **Échec** → diagnostiquer, corriger, relancer (max 2 tentatives).
-  Si toujours KO après 2 tentatives : annuler les changements de ce cycle :
-  - `git checkout -- <fichiers trackés modifiés dans ce cycle sauf DIRTY_FILES>`
-  - `rm <fichiers non-trackés créés dans ce cycle sauf NEW_FILES>`
-  noter les corrections non appliquées, continuer sans elles.
-- **Coverage < 80%** → ajouter des tests pour le code modifié.
+  Si toujours KO : rollback des fichiers trackés modifiés dans ce cycle (`git checkout -- <fichiers>`)
+  et suppression des fichiers non-trackés créés (`rm`), sans toucher `dirty[]` ni `new[]`.
 
 ---
 
-## Phase 6 — Commit et push
+## Phase 6 — Commit & push
 
 Si des modifications ont été appliquées :
 
 ```bash
-git status
 git add <fichiers modifiés spécifiquement>
 git commit -m "fix: appliquer corrections Codex — {résumé 1 ligne}"
 git push
 ```
 
-Si **aucune modification** → ne pas commiter, **ne pas relancer Codex** (même SHA = review
-inutile). Afficher le résumé final avec `@Codex review relancé : NON (aucun changement)` et s'arrêter.
+Si **aucune modification** → exécuter quand même Phase 7 (rapport ignorées si applicable),
+puis afficher le résumé final avec `@Codex review relancé : NON (aucun changement)` et arrêter.
 
 ---
 
-## Phase 7 — Relancer Codex
+## Phase 7 — Rapport des corrections ignorées
 
-Re-vérifier l'anti-boucle (précaution post-push) :
+Si des remarques ont été ignorées, construire le tableau Markdown directement et le passer via stdin :
 
 ```bash
-HEAD_SHA=$(gh pr view --json headRefOid -q .headRefOid)
-T_COMMIT=$(gh api "repos/${REPO}/commits/${HEAD_SHA}" --jq '.commit.committer.date' 2>/dev/null \
-  || git log -1 --format="%cI")
-T_TRIGGER=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '.[] | select(.body | ltrimstr("\n") | rtrimstr("\n") | ltrimstr("\r") | rtrimstr("\r") | ascii_downcase | . == "@codex review") | .created_at' | tail -1)
-T_COMMIT_E=$(uv run python -c "from datetime import datetime,timezone; s='$T_COMMIT'; print(int(datetime.fromisoformat(s.replace('Z','+00:00')).timestamp()))")
-T_TRIGGER_E=$(uv run python -c "from datetime import datetime,timezone; s='$T_TRIGGER'; print(int(datetime.fromisoformat(s.replace('Z','+00:00')).timestamp()) if s else 0)")
+bash .claude/scripts/codex-review/post-skipped.sh <PR> << 'MARKDOWN'
+## Corrections Codex ignorées
+
+| Remarque | Raison |
+|----------|--------|
+| [type] fichier:ligne — description | raison courte |
+MARKDOWN
 ```
 
-Confirmer que `T_COMMIT_E > T_TRIGGER_E` (ou `T_TRIGGER_E == 0`), puis :
+Le script poste le contenu reçu sur stdin. Sans ignorées → ne rien poster.
+
+---
+
+## Phase 8 — Relancer Codex
+
+Re-vérifier l'anti-boucle avant de poster (le statut peut avoir changé pendant les phases 4-7) :
 
 ```bash
-gh pr comment "${PR_NUMBER}" --body "@Codex review"
+bash .claude/scripts/codex-review/anti-loop-check.sh <REPO> <PR>
+```
+
+- exit 1 → ne pas relancer, afficher la raison.
+- exit 0 → poster le trigger :
+
+```bash
+bash .claude/scripts/codex-review/trigger.sh <PR>
 ```
 
 ---
 
 ## Résumé de sortie
 
-Afficher à la fin :
-
 ```
 ## /handle-codex-review — Résultat
 
-PR : #{PR_NUMBER} — {title}
-Branche : {HEAD_BRANCH}
+PR : #{PR} — {title}
+Branche : {branch}
 
 Remarques Codex : N trouvées
 Corrections : X appliquées, Y ignorées

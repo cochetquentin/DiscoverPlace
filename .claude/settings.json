@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash .claude/scripts:*)",
+      "Bash(git:*)",
+      "Bash(rtk:*)",
+      "Bash(node_modules/.bin/tsc:*)",
+      "Bash(node_modules/.bin/vitest:*)"
+    ]
+  }
+}
