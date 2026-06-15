@@ -29,10 +29,18 @@ Solutions simples :
 
 1. Copier `.env.example` vers `.env.local`.
 2. Créer deux clés Google Maps Platform :
-   - une clé serveur limitée à Places API New et Routes API. Sa restriction
+   - une clé serveur limitée à **Places API (New)** et **Routes API**. Sa restriction
      d'application doit être `None`, jamais `Websites`, car les appels backend n'envoient
      pas de référent HTTP ;
-   - une clé navigateur limitée aux domaines autorisés et à Maps JavaScript API.
+   - une clé navigateur limitée aux domaines autorisés et à **Maps JavaScript API**.
+
+   > **Note : transit non supporté au Japon**
+   > La Routes API ne retourne pas de données pour `travelMode: TRANSIT` au Japon
+   > (ni `computeRoutes`, ni `computeRouteMatrix`). C'est une limitation connue de
+   > Google Maps Platform dans cette région — ne pas essayer d'activer ou de déboguer
+   > cette fonctionnalité. L'app utilise une estimation géométrique pour les trajets
+   > en transport en commun, ce qui est suffisant pour filtrer les lieux et calculer
+   > des durées approximatives. Seul WALK bénéficie de données réelles.
 3. Définir `DEMO_PROVIDERS=false` et les clés Google.
 4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel.
 5. Ajouter `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` pour le logging des trips.

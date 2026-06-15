@@ -191,7 +191,18 @@ function estimatedTransitMinutes(from: Coordinate, to: Coordinate): number {
 export class GoogleRoutingProvider implements RoutingProvider {
   async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date, arrivalTime?: Date) {
     if (destinations.length === 0) return new Map<string, number>();
-    const isScheduledTransit = mode === "TRANSIT" && (!!departureTime || !!arrivalTime);
+
+    // Le transit en commun n'est pas supporté par la Routes API au Japon.
+    // On passe directement à l'estimation géométrique pour TRANSIT.
+    if (mode === "TRANSIT") {
+      return new Map(
+        destinations.map((destination) => [
+          destination.id,
+          estimatedTransitMinutes(origin, destination.coordinate)
+        ])
+      );
+    }
+
     const response = await googleFetch<
       { destinationIndex?: number; duration?: string; condition?: string }[]
     >(
@@ -209,20 +220,15 @@ export class GoogleRoutingProvider implements RoutingProvider {
           }
         })),
         travelMode: mode,
-        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {}),
-        ...(mode === "TRANSIT" && arrivalTime && !departureTime ? { arrivalTime: arrivalTime.toISOString() } : {})
+        ...(arrivalTime && !departureTime ? { arrivalTime: arrivalTime.toISOString() } : {})
       },
       "destinationIndex,duration,condition",
       "Routes API Compute Route Matrix"
     ).catch((error) => {
-      // Pour un transit planifié, ne jamais substituer des estimations géométriques
-      // à des données de trafic réelles — même en cas de 429.
-      if (error instanceof GoogleApiError && error.status === 429 && !isScheduledTransit) {
+      if (error instanceof GoogleApiError && error.status === 429) {
         return destinations.map((destination, destinationIndex) => ({
           destinationIndex,
-          duration: `${(mode === "WALK"
-            ? walkingMinutes(origin, destination.coordinate)
-            : estimatedTransitMinutes(origin, destination.coordinate)) * 60}s`,
+          duration: `${walkingMinutes(origin, destination.coordinate) * 60}s`,
           condition: "ROUTE_EXISTS"
         }));
       }
@@ -234,21 +240,16 @@ export class GoogleRoutingProvider implements RoutingProvider {
           (item) =>
             item.destinationIndex !== undefined &&
             item.duration &&
-            (!item.condition || item.condition === "ROUTE_EXISTS")
+            item.condition !== "ROUTE_NOT_FOUND"
         )
         .map((item) => [destinations[item.destinationIndex!].id, durationMinutes(item.duration)])
     );
     if (durations.size > 0) return durations;
-    // Pour un transit planifié à une heure précise, une réponse vide signifie
-    // aucun service disponible — ne pas estimer géométriquement.
-    if (isScheduledTransit) return new Map<string, number>();
 
     return new Map(
       destinations.map((destination) => [
         destination.id,
-        mode === "WALK"
-          ? walkingMinutes(origin, destination.coordinate)
-          : estimatedTransitMinutes(origin, destination.coordinate)
+        walkingMinutes(origin, destination.coordinate)
       ])
     );
   }
@@ -261,20 +262,23 @@ export class GoogleRoutingProvider implements RoutingProvider {
     toName: string,
     departureTime?: Date
   ): Promise<RouteLeg> {
-    const isScheduledTransitRoute = mode === "TRANSIT" && !!departureTime;
-    // Pour TRANSIT on demande les polylines au niveau des steps (plus fiable que le niveau route).
-    // Pour WALK la polyline route-level suffit.
-    const fieldMask = mode === "TRANSIT"
-      ? "routes.duration,routes.distanceMeters,routes.legs.steps.polyline,routes.legs.steps.travelMode"
-      : "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline";
+    // Le transit en commun n'est pas supporté par la Routes API au Japon.
+    // On retourne directement une estimation géométrique pour TRANSIT.
+    if (mode === "TRANSIT") {
+      return {
+        mode,
+        from: fromName,
+        to: toName,
+        durationMinutes: estimatedTransitMinutes(from, to),
+        distanceMeters: distanceMeters(from, to)
+      };
+    }
 
-    type StepResponse = { polyline?: { encodedPolyline?: string }; travelMode?: string };
     type RouteResponse = {
       routes?: {
         duration?: string;
         distanceMeters?: number;
         polyline?: { encodedPolyline?: string };
-        legs?: { steps?: StepResponse[] }[];
       }[];
     };
 
@@ -286,51 +290,29 @@ export class GoogleRoutingProvider implements RoutingProvider {
         travelMode: mode,
         languageCode: "fr-FR",
         units: "METRIC",
-        // polylineQuality n'est valide que pour DRIVE/TWO_WHEELER, pas TRANSIT
-        ...(mode === "WALK" ? { polylineEncoding: "ENCODED_POLYLINE", polylineQuality: "HIGH_QUALITY" } : {}),
-        // Pour TRANSIT : toujours envoyer un departureTime (défaut = maintenant) pour que l'API
-        // retourne un vrai itinéraire avec géométrie plutôt qu'une réponse vide.
-        ...(mode === "TRANSIT"
-          ? { departureTime: (departureTime ?? new Date()).toISOString() }
-          : {})
+        polylineEncoding: "ENCODED_POLYLINE",
+        polylineQuality: "HIGH_QUALITY"
       },
-      fieldMask,
+      "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
       "Routes API Compute Routes"
     ).catch((error) => {
-      // Pour un transit planifié, ne pas substituer des estimations géométriques — même en cas de 429.
-      if (error instanceof GoogleApiError && error.status === 429 && !isScheduledTransitRoute) {
+      if (error instanceof GoogleApiError && error.status === 429) {
         return {
-          routes: [
-            {
-              duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
-              distanceMeters: distanceMeters(from, to),
-              polyline: undefined,
-              legs: undefined
-            }
-          ]
+          routes: [{
+            duration: `${walkingMinutes(from, to) * 60}s`,
+            distanceMeters: distanceMeters(from, to),
+            polyline: undefined
+          }]
         } as RouteResponse;
       }
       throw error;
     });
     const firstRoute = response.routes?.[0];
-    // Pour un transit planifié, une réponse vide = aucun service à cette heure
-    if (!firstRoute && isScheduledTransitRoute) {
-      throw new Error("Aucun itinéraire de transport disponible à l'heure planifiée.");
-    }
     const route = firstRoute ?? {
-      duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
+      duration: `${walkingMinutes(from, to) * 60}s`,
       distanceMeters: distanceMeters(from, to),
-      polyline: undefined,
-      legs: undefined
+      polyline: undefined
     };
-
-    // Extraire les polylines des steps TRANSIT pour un tracé fidèle côté carte
-    const stepPolylines = mode === "TRANSIT"
-      ? (route.legs ?? [])
-          .flatMap((leg) => leg.steps ?? [])
-          .map((step) => step.polyline?.encodedPolyline)
-          .filter((p): p is string => Boolean(p))
-      : undefined;
 
     return {
       mode,
@@ -338,8 +320,7 @@ export class GoogleRoutingProvider implements RoutingProvider {
       to: toName,
       durationMinutes: durationMinutes(route.duration),
       distanceMeters: route.distanceMeters,
-      polyline: route.polyline?.encodedPolyline,
-      ...(stepPolylines?.length ? { stepPolylines } : {})
+      polyline: route.polyline?.encodedPolyline
     };
   }
 }
