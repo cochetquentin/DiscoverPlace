@@ -4,6 +4,24 @@ Automatise le cycle de review Codex ↔ Claude Code sur la PR courante.
 
 ---
 
+## Permissions requises
+
+Le fichier `.claude/settings.json` du projet doit contenir :
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(gh:*)", "Bash(git:*)", "Bash(uv:*)", "Bash(node_modules/.bin/tsc:*)", "Bash(node_modules/.bin/vitest:*)", "Bash(rtk:*)"]
+  }
+}
+```
+
+**Règle d'exécution critique** : chaque appel Bash doit commencer directement par la commande principale (`gh`, `git`, `uv`, `node_modules/.bin/tsc`, etc.) — jamais par une assignation de variable shell (`REPO=...`, `T_TRIGGER=...`). Les règles de permission matchent sur le début de la commande ; un script qui commence par `REPO=$(gh ...)` ne sera pas auto-approuvé.
+
+→ Faire **un appel Bash par commande** et mémoriser les valeurs retournées entre les appels.
+
+---
+
 ## Phase 1 — Identifier la PR et le repo
 
 ```bash
@@ -176,7 +194,18 @@ T_TRIGGER_E=$(uv run python -c "from datetime import datetime,timezone; s='$T_TR
 Confirmer que `T_COMMIT_E > T_TRIGGER_E` (ou `T_TRIGGER_E == 0`), puis :
 
 ```bash
-gh pr comment "${PR_NUMBER}" --body "@Codex review"
+gh pr comment "${PR_NUMBER}" --body "@Codex review
+
+Focus only on:
+- bugs that will cause incorrect behavior in production
+- security vulnerabilities
+- data integrity issues
+- major performance regressions
+
+Do NOT report style issues, naming suggestions, refactoring ideas,
+or low-probability edge cases.
+
+Only create a comment if the issue would justify blocking the PR."
 ```
 
 ---
