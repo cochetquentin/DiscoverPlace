@@ -9,6 +9,7 @@ import {
   safetyMargin
 } from "@/lib/domain/trip-rules";
 import { createProviders } from "@/lib/providers/factory";
+import { GoogleApiError } from "@/lib/providers/google";
 import type {
   EngineStats,
   GenerateTripRequest,
@@ -32,6 +33,14 @@ function planningNow() {
   return relaxed;
 }
 
+function resolveNow(request: GenerateTripRequest): Date {
+  if (request.departureAt) return new Date(request.departureAt);
+  if (request.arrivalBy) {
+    return new Date(new Date(request.arrivalBy).getTime() - request.durationMinutes * 60_000);
+  }
+  return planningNow();
+}
+
 function titleFor(route: ScoredRoute, request: GenerateTripRequest) {
   const mood = {
     surprise: "Surprise locale",
@@ -53,6 +62,7 @@ async function makeStopsAndLegs(
   const stops: TripStop[] = [];
   const legs: RouteLeg[] = [];
   let cursor = now;
+  const isScheduled = Boolean(request.departureAt || request.arrivalBy);
 
   const first = route.places[0];
   const outbound = await routing.route(
@@ -60,8 +70,12 @@ async function makeStopsAndLegs(
     first.coordinate,
     "TRANSIT",
     "Position actuelle",
-    first.name
-  );
+    first.name,
+    isScheduled ? now : undefined
+  ).catch((error) => {
+    if (error instanceof GoogleApiError) throw error;
+    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire disponible.");
+  });
   legs.push(outbound);
   cursor = addMinutes(cursor, outbound.durationMinutes);
 
@@ -88,7 +102,9 @@ async function makeStopsAndLegs(
       departureAt: cursor.toISOString(),
       visitMinutes,
       reason: reranker.explain(place, request),
-      warning: place.openingHours ? undefined : "Horaires non vérifiés"
+      warning: isScheduled && ["cafe", "restaurant", "museum"].includes(place.category)
+        ? "Horaires à vérifier pour la date planifiée"
+        : place.openingHours ? undefined : "Horaires non vérifiés"
     });
   }
 
@@ -98,8 +114,12 @@ async function makeStopsAndLegs(
     request.origin,
     "TRANSIT",
     last.name,
-    "Position actuelle"
-  );
+    "Position actuelle",
+    isScheduled ? cursor : undefined
+  ).catch((error) => {
+    if (error instanceof GoogleApiError) throw error;
+    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire de retour disponible.");
+  });
   legs.push(inbound);
   return { stops, legs };
 }
@@ -107,7 +127,9 @@ async function makeStopsAndLegs(
 async function returnMinutesFor(
   routing: ReturnType<typeof createProviders>["routing"],
   origin: GenerateTripRequest["origin"],
-  anchor: PlaceCandidate
+  anchor: PlaceCandidate,
+  departureTime?: Date,
+  arrivalTime?: Date
 ) {
   const originCandidate: PlaceCandidate = {
     id: "origin",
@@ -118,14 +140,14 @@ async function returnMinutesFor(
     types: [],
     signals: { unusual: 0, quality: 0, descriptive: 0, chainPenalty: 0 }
   };
-  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT")).get("origin");
+  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT", departureTime, arrivalTime)).get("origin");
 }
 
 export async function generateTrip(
   request: GenerateTripRequest
 ): Promise<{ plan: TripPlan; stats: EngineStats }> {
   const providers = createProviders();
-  const now = planningNow();
+  const now = resolveNow(request);
   const transitLimit = config.relaxedTripPlanning
     ? relaxedMaxTransitLeg(request.durationMinutes)
     : maxTransitLeg(request.durationMinutes);
@@ -136,7 +158,13 @@ export async function generateTrip(
   const anchors = await providers.verifier.verify(deduplicatePlaces(rawAnchors));
   const anchorCount = anchors.length;
   const anchorsForRouting = anchors.slice(0, 12);
-  const outbound = await providers.routing.matrix(request.origin, anchorsForRouting, "TRANSIT");
+  const isScheduled = Boolean(request.departureAt || request.arrivalBy);
+  const outbound = await providers.routing.matrix(
+    request.origin,
+    anchorsForRouting,
+    "TRANSIT",
+    isScheduled ? now : undefined
+  );
   if (anchorsForRouting.length === 0) {
     throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
   }
@@ -162,7 +190,21 @@ export async function generateTrip(
     eligible.slice(0, 3).map(async (anchor) => {
       const [nearby, returnMinutes] = await Promise.all([
         providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
-        returnMinutesFor(providers.routing, request.origin, anchor)
+        returnMinutesFor(
+          providers.routing,
+          request.origin,
+          anchor,
+          undefined,
+          // departureAt : le deadline est l'heure d'arrivée souhaitée à l'origine (now + durationMinutes)
+          // arrivalBy : idem, on cherche un trajet arrivant avant la deadline
+          isScheduled
+            ? new Date(
+                request.arrivalBy
+                  ? new Date(request.arrivalBy).getTime()
+                  : now.getTime() + request.durationMinutes * 60_000
+              )
+            : undefined
+        )
       ]);
       if (
         returnMinutes === undefined ||
@@ -180,7 +222,8 @@ export async function generateTrip(
         returnMinutes,
         visitedIds,
         rejectedIds,
-        now
+        now,
+        isScheduled
       });
     })
   );
@@ -221,7 +264,7 @@ export async function generateTrip(
 
   const plan: TripPlan = {
     id: crypto.randomUUID(),
-    createdAt: now.toISOString(),
+    createdAt: new Date().toISOString(),
     request,
     title: titleFor(chosen, request),
     summary: `${stops.length} étapes choisies pour privilégier la surprise sans dépasser ton temps.`,

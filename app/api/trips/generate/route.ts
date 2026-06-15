@@ -3,6 +3,7 @@ import { GoogleApiError } from "@/lib/providers/google";
 import { logTrip } from "@/lib/providers/logger";
 import { generateTripSchema } from "@/lib/validation";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ export async function POST(request: Request) {
     return NextResponse.json(plan);
   } catch (error) {
     if (input) logTrip(input, undefined, error, undefined).catch(console.error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.errors[0]?.message ?? "Données invalides." }, { status: 400 });
+    }
     if (error instanceof NoReliableTripError) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }

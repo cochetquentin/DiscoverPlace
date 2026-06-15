@@ -196,7 +196,7 @@ export class PassthroughVerifier implements PlaceVerifier {
 }
 
 export class DemoRoutingProvider implements RoutingProvider {
-  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK") {
+  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", _departureTime?: Date, _arrivalTime?: Date) {
     return new Map(
       destinations.map((destination) => {
         const distance = distanceMeters(origin, destination.coordinate);
@@ -214,7 +214,8 @@ export class DemoRoutingProvider implements RoutingProvider {
     to: Coordinate,
     mode: "TRANSIT" | "WALK",
     fromName: string,
-    toName: string
+    toName: string,
+    _departureTime?: Date
   ): Promise<RouteLeg> {
     const duration =
       mode === "WALK"

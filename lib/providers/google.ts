@@ -189,8 +189,9 @@ function estimatedTransitMinutes(from: Coordinate, to: Coordinate): number {
 }
 
 export class GoogleRoutingProvider implements RoutingProvider {
-  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK") {
+  async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date, arrivalTime?: Date) {
     if (destinations.length === 0) return new Map<string, number>();
+    const isScheduledTransit = mode === "TRANSIT" && (!!departureTime || !!arrivalTime);
     const response = await googleFetch<
       { destinationIndex?: number; duration?: string; condition?: string }[]
     >(
@@ -207,12 +208,16 @@ export class GoogleRoutingProvider implements RoutingProvider {
             }
           }
         })),
-        travelMode: mode
+        travelMode: mode,
+        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {}),
+        ...(mode === "TRANSIT" && arrivalTime && !departureTime ? { arrivalTime: arrivalTime.toISOString() } : {})
       },
       "destinationIndex,duration,condition",
       "Routes API Compute Route Matrix"
     ).catch((error) => {
-      if (error instanceof GoogleApiError && error.status === 429) {
+      // Pour un transit planifié, ne jamais substituer des estimations géométriques
+      // à des données de trafic réelles — même en cas de 429.
+      if (error instanceof GoogleApiError && error.status === 429 && !isScheduledTransit) {
         return destinations.map((destination, destinationIndex) => ({
           destinationIndex,
           duration: `${(mode === "WALK"
@@ -234,6 +239,9 @@ export class GoogleRoutingProvider implements RoutingProvider {
         .map((item) => [destinations[item.destinationIndex!].id, durationMinutes(item.duration)])
     );
     if (durations.size > 0) return durations;
+    // Pour un transit planifié à une heure précise, une réponse vide signifie
+    // aucun service disponible — ne pas estimer géométriquement.
+    if (isScheduledTransit) return new Map<string, number>();
 
     return new Map(
       destinations.map((destination) => [
@@ -250,7 +258,8 @@ export class GoogleRoutingProvider implements RoutingProvider {
     to: Coordinate,
     mode: "TRANSIT" | "WALK",
     fromName: string,
-    toName: string
+    toName: string,
+    departureTime?: Date
   ): Promise<RouteLeg> {
     const response = await googleFetch<{
       routes?: {
@@ -265,12 +274,14 @@ export class GoogleRoutingProvider implements RoutingProvider {
         destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
         travelMode: mode,
         languageCode: "fr-FR",
-        units: "METRIC"
+        units: "METRIC",
+        ...(mode === "TRANSIT" && departureTime ? { departureTime: departureTime.toISOString() } : {})
       },
       "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
       "Routes API Compute Routes"
     ).catch((error) => {
-      if (error instanceof GoogleApiError && error.status === 429) {
+      // Pour un transit planifié, ne pas substituer des estimations géométriques — même en cas de 429.
+      if (error instanceof GoogleApiError && error.status === 429 && !(mode === "TRANSIT" && departureTime)) {
         return {
           routes: [
             {
@@ -283,12 +294,16 @@ export class GoogleRoutingProvider implements RoutingProvider {
       }
       throw error;
     });
-    const route =
-      response.routes?.[0] ?? {
-        duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
-        distanceMeters: distanceMeters(from, to),
-        polyline: undefined
-      };
+    const firstRoute = response.routes?.[0];
+    // Pour un transit planifié, une réponse vide = aucun service à cette heure
+    if (!firstRoute && mode === "TRANSIT" && departureTime) {
+      throw new Error("Aucun itinéraire de transport disponible à l'heure planifiée.");
+    }
+    const route = firstRoute ?? {
+      duration: `${(mode === "WALK" ? walkingMinutes(from, to) : estimatedTransitMinutes(from, to)) * 60}s`,
+      distanceMeters: distanceMeters(from, to),
+      polyline: undefined
+    };
     return {
       mode,
       from: fromName,

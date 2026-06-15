@@ -30,8 +30,43 @@ const walkingOptions: { value: WalkingLevel; label: string }[] = [
   { value: "high", label: "J’aime marcher" }
 ];
 
+const TZ = "Asia/Tokyo";
+
 const formatTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: TZ }).format(new Date(iso));
+
+const formatDatetime = (iso: string) =>
+  new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit", timeZone: TZ
+  }).format(new Date(iso));
+
+const tokyoDate = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { timeZone: TZ });
+
+// Interpréter la valeur datetime-local en JST (UTC+9), timezone fixe de l'app
+function datetimeToISO(value: string): string {
+  return new Date(`${value}:00+09:00`).toISOString();
+}
+
+// Valeur minimum/maximum pour les inputs datetime-local en JST
+function nowJSTLocal(offsetMs = 0): string {
+  return new Date(Date.now() + offsetMs).toLocaleString("sv-SE", { timeZone: TZ }).replace(" ", "T").slice(0, 16);
+}
+
+function maxJSTLocal(): string {
+  return nowJSTLocal(100 * 24 * 60 * 60 * 1000);
+}
+
+function isTimeInBounds(value: string, mode: "departure" | "arrival", durationMs: number): boolean {
+  if (!value) return false;
+  const ts = new Date(`${value}:00+09:00`).getTime();
+  const now = Date.now();
+  const HORIZON_MS = 100 * 24 * 60 * 60 * 1000;
+  if (mode === "departure") {
+    return ts > now - 60_000 && ts + durationMs < now + HORIZON_MS;
+  }
+  return ts > now + durationMs - 60_000 && ts < now + HORIZON_MS;
+}
 
 function directionsUrl(origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) {
   const query = new URLSearchParams({
@@ -80,6 +115,9 @@ export function DiscoverApp() {
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [timeMode, setTimeMode] = useState<"departure" | "arrival">("departure");
+  const [departureNow, setDepartureNow] = useState(true);
+  const [selectedTime, setSelectedTime] = useState("");
   const ignoreGeolocationRef = useRef(false);
 
   const requestLocation = () => {
@@ -120,6 +158,11 @@ export function DiscoverApp() {
   };
 
   const generate = async (excludeTripId?: string) => {
+    // Re-valider au moment de la soumission : le bouton peut rester actif alors que l'heure a expiré
+    if (selectedTime && !isTimeInBounds(selectedTime, timeMode, durationMinutes * 60_000)) {
+      setError("L'heure sélectionnée n'est plus valide. Choisis une nouvelle heure.");
+      return;
+    }
     setLoading(true);
     setError("");
     const excludedPlaceIds = history
@@ -136,7 +179,13 @@ export function DiscoverApp() {
       mood,
       walking,
       excludeTripId,
-      excludedPlaceIds: [...new Set(excludedPlaceIds)]
+      excludedPlaceIds: [...new Set(excludedPlaceIds)],
+      ...(timeMode === "departure" && !departureNow && selectedTime
+        ? { departureAt: datetimeToISO(selectedTime) }
+        : {}),
+      ...(timeMode === "arrival" && selectedTime
+        ? { arrivalBy: datetimeToISO(selectedTime) }
+        : {})
     };
     try {
       const response = await fetch("/api/trips/generate", {
@@ -230,7 +279,11 @@ export function DiscoverApp() {
         <section className="result-screen">
           <div className="result-hero">
             <div>
-              <p className="eyebrow">Pars maintenant · retour {formatTime(trip.returnsAt)}</p>
+              <p className="eyebrow">
+                {trip.request.departureAt || trip.request.arrivalBy
+                  ? `Départ ${formatDatetime(trip.startsAt)} · retour ${formatDatetime(trip.returnsAt)}`
+                  : `Pars maintenant · retour ${formatTime(trip.returnsAt)}`}
+              </p>
               <h1>{trip.title}</h1>
               <p className="lede">{trip.summary}</p>
             </div>
@@ -255,7 +308,14 @@ export function DiscoverApp() {
                 <div className="stop-index">{index + 1}</div>
                 <div className="stop-card">
                   <div className="stop-meta">
-                    <span>{formatTime(stop.arrivalAt)}–{formatTime(stop.departureAt)}</span>
+                    <span>
+                      {tokyoDate(stop.arrivalAt) !== tokyoDate(trip.startsAt)
+                        ? formatDatetime(stop.arrivalAt)
+                        : formatTime(stop.arrivalAt)}
+                      –{tokyoDate(stop.departureAt) !== tokyoDate(stop.arrivalAt)
+                        ? formatDatetime(stop.departureAt)
+                        : formatTime(stop.departureAt)}
+                    </span>
                     <span>{stop.visitMinutes} min</span>
                   </div>
                   <h2>{stop.place.name}</h2>
@@ -322,7 +382,7 @@ export function DiscoverApp() {
                   <button
                     className={durationMinutes === duration ? "choice active" : "choice"}
                     key={duration}
-                    onClick={() => setDuration(duration as DurationMinutes)}
+                    onClick={() => { setDuration(duration as DurationMinutes); if (timeMode === "arrival") setSelectedTime(""); }}
                   >
                     <strong>{duration < 60 ? duration : duration / 60}</strong>
                     <span>{duration === 60 ? "heure" : "heures"}</span>
@@ -367,6 +427,70 @@ export function DiscoverApp() {
               </div>
             </section>
 
+            <section className="planner-section">
+              <div className="section-heading">
+                <span>04</span>
+                <h2>Horaire</h2>
+              </div>
+              <div className="segmented" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: "12px" }}>
+                <button
+                  className={timeMode === "departure" ? "active" : ""}
+                  onClick={() => { setTimeMode("departure"); setDepartureNow(true); setSelectedTime(""); }}
+                >
+                  Départ
+                </button>
+                <button
+                  className={timeMode === "arrival" ? "active" : ""}
+                  onClick={() => { setTimeMode("arrival"); setDepartureNow(false); setSelectedTime(""); }}
+                >
+                  Arrivée
+                </button>
+              </div>
+              {timeMode === "departure" && (
+                <>
+                  <div className="segmented" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <button
+                      className={departureNow ? "active" : ""}
+                      onClick={() => { setDepartureNow(true); setSelectedTime(""); }}
+                    >
+                      Maintenant
+                    </button>
+                    <button
+                      className={!departureNow ? "active" : ""}
+                      onClick={() => setDepartureNow(false)}
+                    >
+                      Choisir l'heure
+                    </button>
+                  </div>
+                  {!departureNow && (
+                    <input
+                      type="datetime-local"
+                      value={selectedTime}
+                      min={nowJSTLocal()}
+                      max={nowJSTLocal(100 * 24 * 60 * 60 * 1000 - durationMinutes * 60_000)}
+                      onChange={(e) => setSelectedTime(e.target.value)}
+                      style={{ marginTop: "10px", width: "100%", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit", boxSizing: "border-box" }}
+                    />
+                  )}
+                </>
+              )}
+              {timeMode === "arrival" && (
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.82rem", fontWeight: 600, whiteSpace: "nowrap" }}>
+                    Rentrer avant
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={selectedTime}
+                    min={nowJSTLocal(durationMinutes * 60_000)}
+                    max={maxJSTLocal()}
+                    onChange={(e) => setSelectedTime(e.target.value)}
+                    style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "10px", background: "var(--card)", fontSize: "0.9rem", color: "inherit" }}
+                  />
+                </div>
+              )}
+            </section>
+
             <div className="location-line">
               <span>⌖</span>
               <span>{locationState}</span>
@@ -390,7 +514,16 @@ export function DiscoverApp() {
               />
             )}
             {error && <div className="error-card">{error}</div>}
-            <button className="button primary generate" disabled={loading} onClick={() => generate()}>
+            <button
+              className="button primary generate"
+              disabled={
+                loading ||
+                (timeMode === "arrival" && !selectedTime) ||
+                (timeMode === "departure" && !departureNow && !selectedTime) ||
+                (selectedTime !== "" && !isTimeInBounds(selectedTime, timeMode, durationMinutes * 60_000))
+              }
+              onClick={() => generate()}
+            >
               {loading ? <><span className="spinner" /> Je construis ta sortie…</> : "Trouve-moi une sortie"}
             </button>
             <p className="promise">Retour garanti dans le créneau, marge incluse.</p>

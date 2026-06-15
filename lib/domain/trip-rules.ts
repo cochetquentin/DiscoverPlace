@@ -93,13 +93,38 @@ export function moodFit(place: PlaceCandidate, mood: Mood): number {
 export function isOpenForVisit(
   place: PlaceCandidate,
   arrival: Date,
-  visitMinutes: number
+  visitMinutes: number,
+  isScheduled = false
 ): { allowed: boolean; warning?: string } {
   if (!["cafe", "restaurant", "museum"].includes(place.category)) {
     return {
       allowed: true,
       warning: place.openingHours ? undefined : "Horaires non vérifiés"
     };
+  }
+
+  if (isScheduled) {
+    // Pour un départ lointain (> 4h), les données horaires actuelles ne sont pas pertinentes.
+    if (arrival.getTime() - Date.now() > 4 * 3_600_000) {
+      return { allowed: true, warning: "Horaires à vérifier pour la date planifiée" };
+    }
+    // Near-term planifié : openNow indique l'état *actuel*, pas l'état à l'arrivée.
+    // Un café fermé à 8h peut très bien ouvrir à 10h avant qu'on y arrive à 11h.
+    // On laisse passer avec un avertissement plutôt que de rejeter.
+    if (!config.relaxedTripPlanning && place.openingHours?.openNow === false) {
+      return { allowed: true, warning: "Horaires non vérifiés pour l'heure planifiée" };
+    }
+    if (!place.openingHours?.nextCloseTime) {
+      return { allowed: true, warning: "Horaires de fermeture non confirmés" };
+    }
+    // nextCloseTime = fin de la période *actuelle*, pas de la période de la visite planifiée.
+    // Si la visite est après la fermeture courante, le lieu peut rouvrir (ex: service du soir).
+    // On ne peut pas déterminer les horaires futurs ici → warning au lieu de rejet.
+    const requiredOpenUntil = new Date(arrival.getTime() + (visitMinutes + 10) * 60_000);
+    if (new Date(place.openingHours.nextCloseTime) < requiredOpenUntil) {
+      return { allowed: true, warning: "Horaires de fermeture à vérifier pour la visite planifiée" };
+    }
+    return { allowed: true };
   }
 
   // En mode relaxed, on simule 11h — ignorer openNow qui reflète l'heure réelle

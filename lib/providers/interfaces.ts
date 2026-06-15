@@ -20,14 +20,17 @@ export interface RoutingProvider {
   matrix(
     origin: Coordinate,
     destinations: PlaceCandidate[],
-    mode: "TRANSIT" | "WALK"
+    mode: "TRANSIT" | "WALK",
+    departureTime?: Date,
+    arrivalTime?: Date
   ): Promise<Map<string, number>>;
   route(
     from: Coordinate,
     to: Coordinate,
     mode: "TRANSIT" | "WALK",
     fromName: string,
-    toName: string
+    toName: string,
+    departureTime?: Date
   ): Promise<RouteLeg>;
 }
 

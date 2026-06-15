@@ -25,6 +25,7 @@ type BeamSearchInput = {
   visitedIds: Set<string>;
   rejectedIds: Set<string>;
   now: Date;
+  isScheduled: boolean;
 };
 
 export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
@@ -36,7 +37,8 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
     returnMinutes,
     visitedIds,
     rejectedIds,
-    now
+    now,
+    isScheduled
   } = input;
   const usableMinutes = request.durationMinutes - safetyMargin(request.durationMinutes);
   const maxWalking = walkingBudget(request.walking, request.durationMinutes);
@@ -48,7 +50,8 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
   const anchorOpening = isOpenForVisit(
     anchor,
     new Date(now.getTime() + outboundMinutes * 60_000),
-    anchorVisit
+    anchorVisit,
+    isScheduled
   );
   if (!anchorOpening.allowed) return [];
 
@@ -86,7 +89,7 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
           now.getTime() +
             (outboundMinutes + route.walkingMinutes + route.visitMinutes + walk) * 60_000
         );
-        const opening = isOpenForVisit(place, arrival, visit);
+        const opening = isOpenForVisit(place, arrival, visit, isScheduled);
         if (!opening.allowed) continue;
 
         const nextWalking = route.walkingMinutes + walk;
