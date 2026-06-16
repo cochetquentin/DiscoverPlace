@@ -105,10 +105,38 @@ export type TripHistoryItem = {
   status: "suggested" | "completed" | "rejected";
 };
 
+export type AnchorLog = {
+  anchorId: string;
+  anchorName: string;
+  lat: number;
+  lng: number;
+  outboundMinutes: number | null;
+  returnMinutes: number | null;
+  withinTransitLimit: boolean;
+  nearbyCount: number | null;
+  routesBuilt: number | null;
+};
+
+export type NearbyPlaceLog = {
+  anchorId: string;
+  placeId: string;
+  placeName: string;
+  category: string;
+  lat: number;
+  lng: number;
+  signalUnusual: number;
+  signalQuality: number;
+  signalDescriptive: number;
+  signalChainPenalty: number;
+  wasSelected: boolean;
+};
+
 export type EngineStats = {
   anchorCount: number;
   nearbyCount: number;
   routesConsidered: number;
+  anchors: AnchorLog[];
+  nearbyPlaces: NearbyPlaceLog[];
 };
 
 export type ScoredRoute = {

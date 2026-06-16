@@ -20,3 +20,18 @@ export function distanceMeters(a: Coordinate, b: Coordinate): number {
 export function walkingMinutes(a: Coordinate, b: Coordinate): number {
   return Math.max(1, Math.ceil(distanceMeters(a, b) / 75));
 }
+
+// Pénalité de demi-tour : angle proche de 180° entre (from→via) et (via→to).
+// Retourne 0 si l'angle est < 90°, monte jusqu'à 20 à 180°.
+export function backtrackPenalty(from: Coordinate, via: Coordinate, to: Coordinate): number {
+  const v1 = { lat: via.lat - from.lat, lng: via.lng - from.lng };
+  const v2 = { lat: to.lat - via.lat, lng: to.lng - via.lng };
+
+  const mag1 = Math.sqrt(v1.lat ** 2 + v1.lng ** 2);
+  const mag2 = Math.sqrt(v2.lat ** 2 + v2.lng ** 2);
+  if (mag1 < 1e-9 || mag2 < 1e-9) return 0;
+
+  const cosAngle = (v1.lat * v2.lat + v1.lng * v2.lng) / (mag1 * mag2);
+  // cosAngle : 1 = même direction, -1 = demi-tour complet
+  return Math.max(0, -cosAngle) * 20;
+}
