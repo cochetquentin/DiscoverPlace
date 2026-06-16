@@ -83,7 +83,10 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
         if (route.places.some((existing) => distanceMeters(existing.coordinate, place.coordinate) < 400)) continue;
 
         const previous = route.places.at(-1)?.coordinate ?? anchor.coordinate;
-        const walk = route.places.length === 0 ? 0 : walkingMinutes(previous, place.coordinate);
+        // Correction pour la marche réelle : les chemins piétons sont ~1.4x la distance
+        // euclidienne, et Google marche à 60 m/min vs notre estimation à 75 m/min.
+        // Facteur = 1.4 × (75/60) = 1.75 → les estimations reflètent le temps réel.
+        const walk = route.places.length === 0 ? 0 : Math.ceil(walkingMinutes(previous, place.coordinate) * 1.75);
         const visit = effectiveVisitDuration(place.category, request.walking);
         const arrival = new Date(
           now.getTime() +

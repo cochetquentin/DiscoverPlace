@@ -1,4 +1,4 @@
-export const DURATIONS = [60, 120, 240, 360] as const;
+export const DURATIONS = [120, 240, 360] as const;
 export const MOODS = ["surprise", "unusual", "nature", "culture", "food"] as const;
 export const WALKING_LEVELS = ["low", "medium", "high"] as const;
 

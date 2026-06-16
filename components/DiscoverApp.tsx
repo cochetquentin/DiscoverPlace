@@ -4,8 +4,6 @@ import { LocationPicker } from "@/components/LocationPicker";
 import { TripMap } from "@/components/TripMap";
 import type {
   DurationMinutes,
-  GenerateTripRequest,
-  Mood,
   TripHistoryItem,
   TripPlan,
   WalkingLevel
@@ -15,14 +13,6 @@ import { useEffect, useRef, useState } from "react";
 const TOKYO_STATION = { lat: 35.681236, lng: 139.767125 };
 const HISTORY_KEY = "discover-place-history";
 type LocalHistoryItem = TripHistoryItem & { placeIds: string[] };
-
-const moodOptions: { value: Mood; label: string; icon: string }[] = [
-  { value: "surprise", label: "Surprends-moi", icon: "✦" },
-  { value: "unusual", label: "Insolite", icon: "?" },
-  { value: "nature", label: "Nature", icon: "⌁" },
-  { value: "culture", label: "Culture", icon: "◎" },
-  { value: "food", label: "Gourmand", icon: "◒" }
-];
 
 const walkingOptions: { value: WalkingLevel; label: string }[] = [
   { value: "low", label: "Tranquille" },
@@ -104,8 +94,7 @@ function Metric({ value, label }: { value: string; label: string }) {
 }
 
 export function DiscoverApp() {
-  const [durationMinutes, setDuration] = useState<DurationMinutes>(240);
-  const [mood, setMood] = useState<Mood>("surprise");
+  const [durationMinutes, setDuration] = useState<DurationMinutes>(120);
   const [walking, setWalking] = useState<WalkingLevel>("medium");
   const [origin, setOrigin] = useState(TOKYO_STATION);
   const [locationState, setLocationState] = useState("Position de démonstration : Tokyo Station");
@@ -173,10 +162,9 @@ export function DiscoverApp() {
           item.id === excludeTripId
       )
       .flatMap((item) => item.placeIds);
-    const input: GenerateTripRequest = {
+    const input = {
       origin,
       durationMinutes,
-      mood,
       walking,
       excludeTripId,
       excludedPlaceIds: [...new Set(excludedPlaceIds)],
@@ -394,14 +382,14 @@ export function DiscoverApp() {
                 <h2>Temps disponible</h2>
               </div>
               <div className="duration-grid">
-                {[60, 120, 240, 360].map((duration) => (
+                {[120, 240, 360].map((duration) => (
                   <button
                     className={durationMinutes === duration ? "choice active" : "choice"}
                     key={duration}
                     onClick={() => { setDuration(duration as DurationMinutes); if (timeMode === "arrival") setSelectedTime(""); }}
                   >
-                    <strong>{duration < 60 ? duration : duration / 60}</strong>
-                    <span>{duration === 60 ? "heure" : "heures"}</span>
+                    <strong>{duration / 60}</strong>
+                    <span>heures</span>
                   </button>
                 ))}
               </div>
@@ -410,24 +398,6 @@ export function DiscoverApp() {
             <section className="planner-section">
               <div className="section-heading">
                 <span>02</span>
-                <h2>Envie du moment</h2>
-              </div>
-              <div className="chip-grid">
-                {moodOptions.map((option) => (
-                  <button
-                    className={mood === option.value ? "chip active" : "chip"}
-                    key={option.value}
-                    onClick={() => setMood(option.value)}
-                  >
-                    <span>{option.icon}</span>{option.label}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="planner-section">
-              <div className="section-heading">
-                <span>03</span>
                 <h2>Rythme</h2>
               </div>
               <div className="segmented">
@@ -445,7 +415,7 @@ export function DiscoverApp() {
 
             <section className="planner-section">
               <div className="section-heading">
-                <span>04</span>
+                <span>03</span>
                 <h2>Horaire</h2>
               </div>
               <div className="segmented" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: "12px" }}>
