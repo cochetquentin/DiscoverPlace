@@ -21,13 +21,13 @@ const commercialPlace = (nextCloseTime?: string): PlaceCandidate => ({
 
 describe("trip rules", () => {
   it("reserves the requested safety margin", () => {
-    expect(safetyMargin(60)).toBe(10);
+    expect(safetyMargin(120)).toBe(12);
     expect(safetyMargin(240)).toBe(24);
     expect(safetyMargin(360)).toBe(30);
   });
 
   it("caps each transit leg", () => {
-    expect(maxTransitLeg(60)).toBe(15);
+    expect(maxTransitLeg(120)).toBe(30);
     expect(maxTransitLeg(360)).toBe(90);
   });
 

@@ -150,6 +150,7 @@ export async function generateTrip(
   const anchors = await providers.verifier.verify(deduplicatePlaces(rawAnchors));
   const anchorCount = anchors.length;
   const anchorsForRouting = anchors.slice(0, 12);
+  console.log(`[trip] anchors: ${rawAnchors.length} raw → ${anchors.length} verified`);
   const isScheduled = Boolean(request.departureAt || request.arrivalBy);
   const outbound = await providers.routing.matrix(
     request.origin,
@@ -157,6 +158,7 @@ export async function generateTrip(
     "TRANSIT",
     isScheduled ? now : undefined
   );
+  console.log(`[trip] matrix: ${outbound.size}/${anchorsForRouting.length} reachable, transitLimit=${transitLimit}min`);
   if (anchorsForRouting.length === 0) {
     throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
   }
@@ -166,6 +168,7 @@ export async function generateTrip(
     .sort((a, b) => (outbound.get(a.id) ?? Infinity) - (outbound.get(b.id) ?? Infinity))
     .slice(0, 10);
 
+  console.log(`[trip] eligible: ${eligible.length} anchors (transitLimit=${transitLimit}min)`);
   if (eligible.length === 0) {
     const minOutbound = Math.min(...Array.from(outbound.values()));
     throw new NoReliableTripError(
@@ -195,11 +198,12 @@ export async function generateTrip(
         )
       ]);
       if (returnMinutes === undefined || returnMinutes > transitLimit) {
+        console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes ?? "n/a"}min > limit, skipped`);
         return [];
       }
       const verifiedNearby = await providers.verifier.verify(nearby);
       nearbyCount += verifiedNearby.length;
-      return buildRoutes({
+      const builtRoutes = buildRoutes({
         request,
         anchor,
         nearby: verifiedNearby,
@@ -210,11 +214,14 @@ export async function generateTrip(
         now,
         isScheduled
       });
+      console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes}min, nearby=${verifiedNearby.length}, routes=${builtRoutes.length}`);
+      return builtRoutes;
     })
   );
 
   const allRoutes = anchorData.flat();
   const candidates = allRoutes.sort((a, b) => b.score - a.score).slice(0, 3);
+  console.log(`[trip] allRoutes=${allRoutes.length}, candidates=${candidates.length}`);
   if (candidates.length === 0) {
     throw new NoReliableTripError("Aucune sortie fiable n’est disponible pour ces contraintes.");
   }
@@ -237,6 +244,7 @@ export async function generateTrip(
   const visitMinutes = stops.reduce((sum, stop) => sum + stop.visitMinutes, 0);
   const totalMinutes = transitMinutes + walkingMinutes + visitMinutes;
   const margin = safetyMargin(request.durationMinutes);
+  console.log(`[trip] final: total=${totalMinutes}min, budget=${request.durationMinutes - margin}min (margin=${margin}min)`);
   if (totalMinutes > request.durationMinutes - margin) {
     throw new NoReliableTripError("Le trajet final ne laisse pas assez de marge pour rentrer.");
   }

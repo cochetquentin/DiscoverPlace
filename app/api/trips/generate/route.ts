@@ -1,6 +1,7 @@
 import { generateTrip, NoReliableTripError } from "@/lib/engine";
 import { GoogleApiError } from "@/lib/providers/google";
 import { logTrip } from "@/lib/providers/logger";
+import type { GenerateTripRequest } from "@/lib/types";
 import { generateTripSchema } from "@/lib/validation";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -8,9 +9,10 @@ import { z } from "zod";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  let input: ReturnType<typeof generateTripSchema.parse> | undefined;
+  let input: GenerateTripRequest | undefined;
   try {
-    input = generateTripSchema.parse(await request.json());
+    const parsed = generateTripSchema.parse(await request.json());
+    input = { ...parsed, mood: "surprise" };
     const { plan, stats } = await generateTrip(input);
     logTrip(input, plan, undefined, stats).catch(console.error);
     return NextResponse.json(plan);
