@@ -239,6 +239,23 @@ h1 {
 .stop-actions a { display: inline-flex; font-size: .82rem; }
 .return-stop .stop-index { background: var(--coral); }
 .action-dock { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin: 30px 0 0; }
+.button.liked    { border: 1px solid var(--green); color: var(--green); background: transparent; }
+.button.disliked { border: 1px solid var(--coral-dark); color: var(--coral-dark); background: transparent; }
+.button.liked.active    { background: var(--green); color: white; border-color: var(--green); }
+.button.disliked.active { background: var(--coral); color: white; border-color: var(--coral); box-shadow: 0 8px 24px rgba(245,91,62,.25); }
+.rating-comment { display: flex; flex-direction: column; gap: 8px; }
+.rating-comment--full { flex-direction: row; align-items: flex-start; gap: 12px; margin-bottom: 24px; }
+.rating-comment--full .rating-textarea { flex: 1; }
+.rating-comment--full .button { flex-shrink: 0; align-self: flex-end; }
+.rating-textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); font: inherit; color: inherit; resize: none; line-height: 1.5;
+}
+.rating-textarea:focus { outline: none; border-color: var(--green); }
+.rating-thanks { margin: 0 0 20px; color: var(--muted); font-size: .82rem; }
+.rating-comment--bottom { margin: 12px 0 16px; }
+.trip-params { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.rating-comment--bottom { margin: 12px 0 16px; }
 
 .history-screen { min-height: 80vh; }
 .history-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }

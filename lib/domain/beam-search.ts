@@ -1,4 +1,4 @@
-import { distanceMeters, walkingMinutes } from "@/lib/domain/geo";
+import { backtrackPenalty, distanceMeters, walkingMinutes } from "@/lib/domain/geo";
 import { scorePlace } from "@/lib/domain/scoring";
 import {
   BEAM_WIDTH,
@@ -101,6 +101,11 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
         if (nextWalking > maxWalking || total > usableMinutes) continue;
 
         const existingCategories = new Set(route.places.map((item) => item.category));
+        // Point qui précédait `previous` : origin pour le 2e stop, avant-dernier sinon
+        const from =
+          route.places.length >= 2
+            ? route.places.at(-2)!.coordinate
+            : request.origin;
         const next: ScoredRoute = {
           places: [...route.places, place],
           outboundMinutes,
@@ -116,7 +121,8 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
               rejectedIds,
               existingCategories,
               travelPenalty: request.walking === "high" ? 0 : walk * 0.25
-            })
+            }) -
+            backtrackPenalty(from, previous, place.coordinate)
         };
         expanded.push(next);
         if (next.places.length >= 2) completed.push(next);

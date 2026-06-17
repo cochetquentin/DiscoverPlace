@@ -99,6 +99,9 @@ export function DiscoverApp() {
   const [origin, setOrigin] = useState(TOKYO_STATION);
   const [locationState, setLocationState] = useState("Position de démonstration : Tokyo Station");
   const [trip, setTrip] = useState<TripPlan | null>(null);
+  const [tripRating, setTripRating] = useState<"like" | "dislike" | null>(null);
+  const [ratingComment, setRatingComment] = useState("");
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [history, setHistory] = useState<LocalHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -186,6 +189,9 @@ export function DiscoverApp() {
         throw new Error(data.error ?? "Impossible de générer une sortie.");
       }
       setTrip(data);
+      setTripRating(null);
+      setRatingComment("");
+      setRatingSubmitted(false);
       saveHistory([
         {
           id: data.id,
@@ -207,17 +213,16 @@ export function DiscoverApp() {
     }
   };
 
-  const feedback = async (status: "completed" | "rejected") => {
+  const submitRating = (rating: "like" | "dislike", comment?: string) => {
     if (!trip) return;
-    const updated = { ...trip, status };
-    setTrip(updated);
-    saveHistory(history.map((item) => (item.id === trip.id ? { ...item, status } : item)));
-    fetch("/api/trips/feedback", {
+    setRatingSubmitted(true);
+    fetch("/api/trips/rate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tripId: trip.id,
-        status,
+        rating,
+        comment: comment || undefined,
         mood: trip.request.mood,
         walking: trip.request.walking,
         durationMinutes: trip.request.durationMinutes
@@ -274,23 +279,45 @@ export function DiscoverApp() {
               </p>
               <h1>{trip.title}</h1>
               <p className="lede">{trip.summary}</p>
+              <div className="trip-params">
+                <span className="chip active">{trip.request.durationMinutes / 60}h</span>
+                <span className="chip active">{{ low: "Tranquille", medium: "Normale", high: "J'aime marcher" }[trip.request.walking]}</span>
+                <span className="chip active">{{ surprise: "Surprise", unusual: "Inattendu", nature: "Nature", culture: "Culture", food: "Gourmand" }[trip.request.mood]}</span>
+              </div>
             </div>
             <div className="result-hero-side">
-              <div className="score-stamp">
-                <strong>{Math.round(trip.score)}</strong>
-                <span>indice découverte</span>
-              </div>
               <div className="action-dock action-dock--hero">
-                <button className="button secondary" disabled={loading} onClick={() => generate(trip.id)}>
-                  Autre idée
+                <button
+                  className={`button liked${tripRating === "like" ? " active" : ""}`}
+                  onClick={() => { setTripRating("like"); setRatingSubmitted(false); }}
+                >
+                  Bonne idée 👍
                 </button>
-                <button className="button ghost" onClick={() => feedback("rejected")}>Pas pour moi</button>
-                <button className="button primary" onClick={() => feedback("completed")}>
-                  J'ai fait cette sortie
+                <button
+                  className={`button disliked${tripRating === "dislike" ? " active" : ""}`}
+                  onClick={() => { setTripRating("dislike"); setRatingSubmitted(false); }}
+                >
+                  Pas terrible 👎
                 </button>
               </div>
             </div>
           </div>
+
+          {tripRating !== null && !ratingSubmitted && (
+            <div className="rating-comment rating-comment--full">
+              <textarea
+                className="rating-textarea"
+                placeholder="Pourquoi ? (optionnel)"
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                rows={3}
+              />
+              <button className="button primary" onClick={() => submitRating(tripRating, ratingComment)}>
+                Envoyer
+              </button>
+            </div>
+          )}
+          {ratingSubmitted && <p className="rating-thanks">Merci pour ton retour !</p>}
 
           <div className="result-body">
             <div className="result-map-col">
@@ -356,14 +383,39 @@ export function DiscoverApp() {
           </div>
 
           <div className="action-dock action-dock--bottom">
-            <button className="button secondary" disabled={loading} onClick={() => generate(trip.id)}>
-              Autre idée
+            <button
+              className={`button liked${tripRating === "like" ? " active" : ""}`}
+              onClick={() => { setTripRating("like"); setRatingSubmitted(false); }}
+            >
+              Bonne idée 👍
             </button>
-            <button className="button ghost" onClick={() => feedback("rejected")}>Pas pour moi</button>
-            <button className="button primary" onClick={() => feedback("completed")}>
-              J’ai fait cette sortie
+            <button
+              className={`button disliked${tripRating === "dislike" ? " active" : ""}`}
+              onClick={() => { setTripRating("dislike"); setRatingSubmitted(false); }}
+            >
+              Pas terrible 👎
             </button>
           </div>
+          {tripRating !== null && !ratingSubmitted && (
+            <div className="rating-comment rating-comment--bottom">
+              <textarea
+                className="rating-textarea"
+                placeholder="Pourquoi ? (optionnel)"
+                value={ratingComment}
+                onChange={(e) => setRatingComment(e.target.value)}
+                rows={2}
+              />
+              <div className="rating-comment-actions">
+                <button className="button ghost" onClick={() => submitRating(tripRating)}>
+                  Passer
+                </button>
+                <button className="button primary" onClick={() => submitRating(tripRating, ratingComment)}>
+                  Envoyer
+                </button>
+              </div>
+            </div>
+          )}
+          {ratingSubmitted && <p className="rating-thanks">Merci pour ton retour !</p>}
         </section>
       ) : (
         <section className="home-screen">

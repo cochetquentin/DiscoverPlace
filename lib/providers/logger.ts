@@ -64,11 +64,14 @@ export async function logTrip(
 
   console.log("[logger] Trip logged OK");
 
+  const tripLogId = logRow?.id;
+  if (!tripLogId) return;
+
   // Insérer les stops détaillés
-  if (result?.stops?.length && logRow?.id) {
+  if (result?.stops?.length) {
     const walkLegs = result.legs.filter((l) => l.mode === "WALK");
     const stopsPayload = result.stops.map((stop, index) => ({
-      trip_log_id: logRow.id,
+      trip_log_id: tripLogId,
       position: index,
       place_name: stop.place.name,
       place_source: stop.place.source,
@@ -76,15 +79,72 @@ export async function logTrip(
       visit_minutes: stop.visitMinutes,
       signal_unusual: stop.place.signals.unusual,
       signal_quality: stop.place.signals.quality,
-      score: null as number | null, // score par stop non disponible directement
+      score: null as number | null,
       walking_from_previous: index > 0 ? (walkLegs[index - 1]?.durationMinutes ?? null) : 0
     }));
-
     const { error: stopsError } = await supabase.from("trip_stops").insert(stopsPayload);
-    if (stopsError) {
-      console.error("[logger] trip_stops insert error:", stopsError.message);
-    }
+    if (stopsError) console.error("[logger] trip_stops insert error:", stopsError.message);
   }
+
+  // Insérer les anchors (tous, y compris rejetés)
+  if (stats?.anchors?.length) {
+    const anchorsPayload = stats.anchors.map((a) => ({
+      trip_log_id: tripLogId,
+      anchor_id: a.anchorId,
+      anchor_name: a.anchorName,
+      lat: a.lat,
+      lng: a.lng,
+      outbound_minutes: a.outboundMinutes,
+      return_minutes: a.returnMinutes,
+      within_transit_limit: a.withinTransitLimit,
+      nearby_count: a.nearbyCount,
+      routes_built: a.routesBuilt
+    }));
+    const { error: anchorsError } = await supabase.from("trip_anchors").insert(anchorsPayload);
+    if (anchorsError) console.error("[logger] trip_anchors insert error:", anchorsError.message);
+  }
+
+  // Insérer les lieux nearby avec leurs signaux
+  if (stats?.nearbyPlaces?.length) {
+    const nearbyPayload = stats.nearbyPlaces.map((p) => ({
+      trip_log_id: tripLogId,
+      anchor_id: p.anchorId,
+      place_id: p.placeId,
+      place_name: p.placeName,
+      category: p.category,
+      lat: p.lat,
+      lng: p.lng,
+      signal_unusual: p.signalUnusual,
+      signal_quality: p.signalQuality,
+      signal_descriptive: p.signalDescriptive,
+      signal_chain_penalty: p.signalChainPenalty,
+      was_selected: p.wasSelected
+    }));
+    const { error: nearbyError } = await supabase.from("trip_nearby_places").insert(nearbyPayload);
+    if (nearbyError) console.error("[logger] trip_nearby_places insert error:", nearbyError.message);
+  }
+}
+
+export async function logRating(
+  tripId: string,
+  rating: "like" | "dislike",
+  request: Pick<GenerateTripRequest, "mood" | "walking" | "durationMinutes">,
+  comment?: string
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const { error } = await supabase.from("trip_ratings").upsert({
+    trip_id: tripId,
+    rating,
+    comment: comment ?? null,
+    mood: request.mood,
+    walking: request.walking,
+    duration_minutes: request.durationMinutes,
+    updated_at: new Date().toISOString()
+  });
+
+  if (error) console.error("[logger] trip_ratings upsert error:", error.message);
 }
 
 export async function logFeedback(

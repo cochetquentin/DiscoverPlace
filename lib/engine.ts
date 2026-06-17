@@ -9,8 +9,10 @@ import {
 import { createProviders } from "@/lib/providers/factory";
 import { GoogleApiError } from "@/lib/providers/google";
 import type {
+  AnchorLog,
   EngineStats,
   GenerateTripRequest,
+  NearbyPlaceLog,
   PlaceCandidate,
   RouteLeg,
   ScoredRoute,
@@ -163,6 +165,27 @@ export async function generateTrip(
     throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
   }
 
+  // Construire les logs d’anchors (tous, même les rejetés)
+  const anchorLogs = new Map<string, AnchorLog>(
+    anchorsForRouting.map((anchor) => {
+      const outboundMinutes = outbound.get(anchor.id) ?? null;
+      return [
+        anchor.id,
+        {
+          anchorId: anchor.id,
+          anchorName: anchor.name,
+          lat: anchor.coordinate.lat,
+          lng: anchor.coordinate.lng,
+          outboundMinutes,
+          returnMinutes: null,
+          withinTransitLimit: outboundMinutes !== null && outboundMinutes <= transitLimit,
+          nearbyCount: null,
+          routesBuilt: null
+        }
+      ];
+    })
+  );
+
   const eligible = anchorsForRouting
     .filter((anchor) => (outbound.get(anchor.id) ?? Infinity) <= transitLimit)
     .sort((a, b) => (outbound.get(a.id) ?? Infinity) - (outbound.get(b.id) ?? Infinity))
@@ -177,6 +200,8 @@ export async function generateTrip(
   }
 
   let nearbyCount = 0;
+  const nearbyPlaceLogs: NearbyPlaceLog[] = [];
+
   const anchorData = await Promise.all(
     eligible.slice(0, 3).map(async (anchor) => {
       const [nearby, returnMinutes] = await Promise.all([
@@ -186,7 +211,7 @@ export async function generateTrip(
           request.origin,
           anchor,
           undefined,
-          // departureAt : le deadline est l'heure d'arrivée souhaitée à l'origine (now + durationMinutes)
+          // departureAt : le deadline est l’heure d’arrivée souhaitée à l’origine (now + durationMinutes)
           // arrivalBy : idem, on cherche un trajet arrivant avant la deadline
           isScheduled
             ? new Date(
@@ -197,12 +222,35 @@ export async function generateTrip(
             : undefined
         )
       ]);
+
+      const anchorLog = anchorLogs.get(anchor.id);
+      if (anchorLog) anchorLog.returnMinutes = returnMinutes ?? null;
+
       if (returnMinutes === undefined || returnMinutes > transitLimit) {
         console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes ?? "n/a"}min > limit, skipped`);
         return [];
       }
+
       const verifiedNearby = await providers.verifier.verify(nearby);
       nearbyCount += verifiedNearby.length;
+
+      // Collecter les lieux nearby avec leurs signaux
+      for (const place of verifiedNearby) {
+        nearbyPlaceLogs.push({
+          anchorId: anchor.id,
+          placeId: place.id,
+          placeName: place.name,
+          category: place.category,
+          lat: place.coordinate.lat,
+          lng: place.coordinate.lng,
+          signalUnusual: place.signals.unusual,
+          signalQuality: place.signals.quality,
+          signalDescriptive: place.signals.descriptive,
+          signalChainPenalty: place.signals.chainPenalty,
+          wasSelected: false  // mis à jour après sélection finale
+        });
+      }
+
       const builtRoutes = buildRoutes({
         request,
         anchor,
@@ -214,6 +262,12 @@ export async function generateTrip(
         now,
         isScheduled
       });
+
+      if (anchorLog) {
+        anchorLog.nearbyCount = verifiedNearby.length;
+        anchorLog.routesBuilt = builtRoutes.length;
+      }
+
       console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes}min, nearby=${verifiedNearby.length}, routes=${builtRoutes.length}`);
       return builtRoutes;
     })
@@ -228,6 +282,13 @@ export async function generateTrip(
 
   const chosenIndex = await providers.reranker.choose(candidates, request);
   const chosen = candidates[chosenIndex] ?? candidates[0];
+
+  // Marquer les lieux de la route finale comme sélectionnés
+  const selectedPlaceIds = new Set(chosen.places.map((p) => p.id));
+  for (const log of nearbyPlaceLogs) {
+    if (selectedPlaceIds.has(log.placeId)) log.wasSelected = true;
+  }
+
   const { stops, legs } = await makeStopsAndLegs(
     chosen,
     request,
@@ -252,7 +313,9 @@ export async function generateTrip(
   const stats: EngineStats = {
     anchorCount,
     nearbyCount,
-    routesConsidered: allRoutes.length
+    routesConsidered: allRoutes.length,
+    anchors: Array.from(anchorLogs.values()),
+    nearbyPlaces: nearbyPlaceLogs
   };
 
   const plan: TripPlan = {
