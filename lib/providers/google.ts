@@ -1,5 +1,5 @@
 import { config } from "@/lib/config";
-import { distanceMeters, walkingMinutes } from "@/lib/domain/geo";
+import { distanceMeters, estimatedTransitMinutes, walkingMinutes } from "@/lib/domain/geo";
 import type {
   Coordinate,
   GenerateTripRequest,
@@ -49,6 +49,10 @@ function normalizePlace(raw: Record<string, unknown>): PlaceCandidate | null {
   const hours = raw.currentOpeningHours as
     | { openNow?: boolean; nextCloseTime?: string }
     | undefined;
+
+  // Exclure les hébergements et équipements sportifs/enfants — hors-sujet pour une balade découverte
+  if (types.some((t) => /hotel|hostel|motel|lodging/.test(t))) return null;
+  if (types.some((t) => /playground|tennis_court|athletic_field|sports_complex|stadium|swimming_pool|gym|fitness/.test(t))) return null;
 
   return {
     id: `google:${id}`,
@@ -166,7 +170,9 @@ export class GoogleDiscoveryProvider implements DiscoveryProvider {
           "art_gallery",
           "amusement_park",
           "aquarium",
-          "zoo"
+          "zoo",
+          "shinto_shrine",
+          "buddhist_temple"
         ]
       },
       "places.id,places.displayName,places.location,places.primaryType,places.types,places.googleMapsUri,places.businessStatus,places.rating,places.userRatingCount,places.currentOpeningHours",
@@ -183,10 +189,6 @@ export class GooglePlaceVerifier implements PlaceVerifier {
 }
 
 const durationMinutes = (value?: string) => Math.ceil(Number(value?.replace("s", "") ?? 0) / 60);
-
-function estimatedTransitMinutes(from: Coordinate, to: Coordinate): number {
-  return Math.max(12, Math.ceil(distanceMeters(from, to) / 430) + 8);
-}
 
 export class GoogleRoutingProvider implements RoutingProvider {
   async matrix(origin: Coordinate, destinations: PlaceCandidate[], mode: "TRANSIT" | "WALK", departureTime?: Date, arrivalTime?: Date) {

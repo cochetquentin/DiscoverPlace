@@ -103,14 +103,16 @@ export function TripMap({ trip }: Props) {
         });
         const bounds = new window.google.maps.LatLngBounds();
 
-        // Marqueur de départ/arrivée (boucle) — rouge
-        bounds.extend(trip.request.origin);
-        new window.google!.maps.Marker({
-          position: trip.request.origin,
-          map,
-          icon: makeMarkerIcon("#ef4444"),
-          label: makeMarkerLabel("D"),
-        });
+        // Marqueur de départ — rouge (masqué en mode arrivée, l'origine n'est pas le début du trajet)
+        if (!trip.request.destination) {
+          bounds.extend(trip.request.origin);
+          new window.google!.maps.Marker({
+            position: trip.request.origin,
+            map,
+            icon: makeMarkerIcon("#ef4444"),
+            label: makeMarkerLabel("D"),
+          });
+        }
 
         // Marqueurs des stops — indigo
         trip.stops.forEach((stop, index) => {
@@ -123,12 +125,23 @@ export function TripMap({ trip }: Props) {
           });
         });
 
+        // Marqueur d'arrivée — vert (seulement si destination différente de l'origine)
+        if (trip.request.destination) {
+          bounds.extend(trip.request.destination);
+          new window.google!.maps.Marker({
+            position: trip.request.destination,
+            map,
+            icon: makeMarkerIcon("#22c55e"),
+            label: makeMarkerLabel("A"),
+          });
+        }
+
         const geometry = window.google.maps.geometry;
-        const points = [
-          trip.request.origin,
-          ...trip.stops.map((s) => s.place.coordinate),
-          trip.request.origin,
-        ];
+        const endpoint = trip.request.destination ?? trip.request.origin;
+        // Mode arrivée : pas de leg outbound, la route commence au 1er stop
+        const points = trip.request.destination
+          ? [...trip.stops.map((s) => s.place.coordinate), endpoint]
+          : [trip.request.origin, ...trip.stops.map((s) => s.place.coordinate), endpoint];
 
         // Seuls les segments à pied sont tracés — les segments TRANSIT n'ont pas
         // de données de géométrie disponibles (restriction Google Maps pour le Japon).

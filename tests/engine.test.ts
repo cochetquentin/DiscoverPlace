@@ -13,7 +13,7 @@ describe("trip engine integration", () => {
     );
     expect(plan.stops.length).toBeGreaterThanOrEqual(2);
     expect(plan.totalMinutes + plan.safetyMarginMinutes).toBe(240);
-    expect(plan.legs.at(0)?.mode).toBe("TRANSIT");
-    expect(plan.legs.at(-1)?.mode).toBe("TRANSIT");
+    expect(plan.transitMinutes).toBe(0);
+    expect(plan.legs.every((l) => l.mode === "WALK")).toBe(true);
   });
 });

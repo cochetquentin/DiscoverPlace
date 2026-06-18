@@ -6,6 +6,10 @@ export const generateTripSchema = z
       lat: z.number().min(34).max(37),
       lng: z.number().min(138).max(141)
     }),
+    destination: z.object({
+      lat: z.number().min(34).max(37),
+      lng: z.number().min(138).max(141)
+    }).optional(),
     durationMinutes: z.union([
       z.literal(120),
       z.literal(240),

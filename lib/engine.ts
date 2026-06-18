@@ -1,10 +1,10 @@
 import { buildRoutes } from "@/lib/domain/beam-search";
-import { deduplicatePlaces } from "@/lib/domain/scoring";
+import { walkingMinutes } from "@/lib/domain/geo";
 import {
   effectiveVisitDuration,
-  maxTransitLeg,
   nearbyRadius,
-  safetyMargin
+  safetyMargin,
+  walkingBudget
 } from "@/lib/domain/trip-rules";
 import { createProviders } from "@/lib/providers/factory";
 import { GoogleApiError } from "@/lib/providers/google";
@@ -12,8 +12,6 @@ import type {
   AnchorLog,
   EngineStats,
   GenerateTripRequest,
-  NearbyPlaceLog,
-  PlaceCandidate,
   RouteLeg,
   ScoredRoute,
   TripPlan,
@@ -60,21 +58,25 @@ async function makeStopsAndLegs(
   let cursor = now;
   const isScheduled = Boolean(request.departureAt || request.arrivalBy);
 
+  // Leg aller : depuis l'origine, sauf en mode arrivée où le user rejoint le 1er stop par ses propres moyens
   const first = route.places[0];
-  const outbound = await routing.route(
-    request.origin,
-    first.coordinate,
-    "TRANSIT",
-    "Position actuelle",
-    first.name,
-    isScheduled ? now : undefined
-  ).catch((error) => {
-    if (error instanceof GoogleApiError) throw error;
-    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire disponible.");
-  });
-  legs.push(outbound);
-  cursor = addMinutes(cursor, outbound.durationMinutes);
+  if (!request.destination) {
+    const outbound = await routing.route(
+      request.origin,
+      first.coordinate,
+      "WALK",
+      "Position actuelle",
+      first.name,
+      isScheduled ? now : undefined
+    ).catch((error) => {
+      if (error instanceof GoogleApiError) throw error;
+      throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire disponible.");
+    });
+    legs.push(outbound);
+    cursor = addMinutes(cursor, outbound.durationMinutes);
+  }
 
+  // Stops et legs inter-stops
   for (let index = 0; index < route.places.length; index += 1) {
     const place = route.places[index];
     if (index > 0) {
@@ -89,14 +91,14 @@ async function makeStopsAndLegs(
       legs.push(leg);
       cursor = addMinutes(cursor, leg.durationMinutes);
     }
-    const visitMinutes = effectiveVisitDuration(place.category, request.walking);
+    const visitMins = effectiveVisitDuration(place.category, request.walking);
     const arrival = cursor;
-    cursor = addMinutes(cursor, visitMinutes);
+    cursor = addMinutes(cursor, visitMins);
     stops.push({
       place,
       arrivalAt: arrival.toISOString(),
       departureAt: cursor.toISOString(),
-      visitMinutes,
+      visitMinutes: visitMins,
       reason: reranker.explain(place, request),
       warning: isScheduled && ["cafe", "restaurant", "museum"].includes(place.category)
         ? "Horaires à vérifier pour la date planifiée"
@@ -104,39 +106,24 @@ async function makeStopsAndLegs(
     });
   }
 
-  const last = route.places.at(-1)!;
-  const inbound = await routing.route(
-    last.coordinate,
-    request.origin,
-    "TRANSIT",
-    last.name,
-    "Position actuelle",
-    isScheduled ? cursor : undefined
-  ).catch((error) => {
-    if (error instanceof GoogleApiError) throw error;
-    throw new NoReliableTripError(error instanceof Error ? error.message : "Aucun itinéraire de retour disponible.");
-  });
-  legs.push(inbound);
-  return { stops, legs };
-}
+  // Leg final : vers destination si définie — sinon la balade se termine au dernier stop
+  if (request.destination) {
+    const last = route.places.at(-1)!;
+    const final = await routing.route(
+      last.coordinate,
+      request.destination,
+      "WALK",
+      last.name,
+      "Destination",
+      isScheduled ? cursor : undefined
+    ).catch((error) => {
+      if (error instanceof GoogleApiError) throw error;
+      throw new NoReliableTripError(error instanceof Error ? error.message : "Impossible d'atteindre la destination.");
+    });
+    legs.push(final);
+  }
 
-async function returnMinutesFor(
-  routing: ReturnType<typeof createProviders>["routing"],
-  origin: GenerateTripRequest["origin"],
-  anchor: PlaceCandidate,
-  departureTime?: Date,
-  arrivalTime?: Date
-) {
-  const originCandidate: PlaceCandidate = {
-    id: "origin",
-    source: "demo",
-    name: "Position actuelle",
-    coordinate: origin,
-    category: "micro",
-    types: [],
-    signals: { unusual: 0, quality: 0, descriptive: 0, chainPenalty: 0 }
-  };
-  return (await routing.matrix(anchor.coordinate, [originCandidate], "TRANSIT", departureTime, arrivalTime)).get("origin");
+  return { stops, legs };
 }
 
 export async function generateTrip(
@@ -144,178 +131,108 @@ export async function generateTrip(
 ): Promise<{ plan: TripPlan; stats: EngineStats }> {
   const providers = createProviders();
   const now = resolveNow(request);
-  const transitLimit = maxTransitLeg(request.durationMinutes);
   const visitedIds = new Set(request.excludedPlaceIds ?? []);
   const rejectedIds = new Set(request.excludedPlaceIds ?? []);
-
-  const rawAnchors = await providers.discovery.findAnchors(request);
-  const anchors = await providers.verifier.verify(deduplicatePlaces(rawAnchors));
-  const anchorCount = anchors.length;
-  const anchorsForRouting = anchors.slice(0, 12);
-  console.log(`[trip] anchors: ${rawAnchors.length} raw → ${anchors.length} verified`);
   const isScheduled = Boolean(request.departureAt || request.arrivalBy);
-  const outbound = await providers.routing.matrix(
-    request.origin,
-    anchorsForRouting,
-    "TRANSIT",
-    isScheduled ? now : undefined
-  );
-  console.log(`[trip] matrix: ${outbound.size}/${anchorsForRouting.length} reachable, transitLimit=${transitLimit}min`);
-  if (anchorsForRouting.length === 0) {
-    throw new NoReliableTripError("Google n’a renvoyé aucun lieu exploitable pour cette recherche.");
+
+  const radius = nearbyRadius(request.walking, request.durationMinutes);
+  // Mode arrivée : chercher près de la destination, pas de l'origine
+  const searchCenter = request.destination ?? request.origin;
+  const nearby = await providers.discovery.findNearby(searchCenter, radius, request.mood);
+  const candidates = await providers.verifier.verify(nearby);
+  console.log(`[trip] nearby from ${request.destination ? "destination" : "origin"}: ${candidates.length} places (radius=${radius}m, walking=${request.walking})`);
+
+  if (candidates.length === 0) {
+    throw new NoReliableTripError("Aucun lieu trouvé à proximité pour une balade.");
   }
 
-  // Construire les logs d’anchors (tous, même les rejetés)
-  const anchorLogs = new Map<string, AnchorLog>(
-    anchorsForRouting.map((anchor) => {
-      const outboundMinutes = outbound.get(anchor.id) ?? null;
-      return [
-        anchor.id,
-        {
-          anchorId: anchor.id,
-          anchorName: anchor.name,
-          lat: anchor.coordinate.lat,
-          lng: anchor.coordinate.lng,
-          outboundMinutes,
-          returnMinutes: null,
-          withinTransitLimit: outboundMinutes !== null && outboundMinutes <= transitLimit,
-          nearbyCount: null,
-          routesBuilt: null
-        }
-      ];
-    })
-  );
-
-  const eligible = anchorsForRouting
-    .filter((anchor) => (outbound.get(anchor.id) ?? Infinity) <= transitLimit)
-    .sort((a, b) => (outbound.get(a.id) ?? Infinity) - (outbound.get(b.id) ?? Infinity))
-    .slice(0, 10);
-
-  console.log(`[trip] eligible: ${eligible.length} anchors (transitLimit=${transitLimit}min)`);
-  if (eligible.length === 0) {
-    const minOutbound = Math.min(...Array.from(outbound.values()));
-    throw new NoReliableTripError(
-      `J’ai trouvé ${anchors.length} lieux, mais aucun n’est atteignable avec la limite de transport actuelle. Le plus proche semble à ${Number.isFinite(minOutbound) ? minOutbound : "?"} min. Essaie 4h/6h ou vérifie ta position de départ.`
-    );
-  }
-
-  let nearbyCount = 0;
-  const nearbyPlaceLogs: NearbyPlaceLog[] = [];
-
+  // Chaque candidat peut être le premier stop — exclure les lieux déjà vus/rejetés comme anchor
+  const anchorCandidates = candidates.filter((c) => !visitedIds.has(c.id));
   const anchorData = await Promise.all(
-    eligible.slice(0, 3).map(async (anchor) => {
-      const [nearby, returnMinutes] = await Promise.all([
-        providers.discovery.findNearby(anchor.coordinate, nearbyRadius(request.walking), request.mood),
-        returnMinutesFor(
-          providers.routing,
-          request.origin,
-          anchor,
-          undefined,
-          // departureAt : le deadline est l’heure d’arrivée souhaitée à l’origine (now + durationMinutes)
-          // arrivalBy : idem, on cherche un trajet arrivant avant la deadline
-          isScheduled
-            ? new Date(
-                request.arrivalBy
-                  ? new Date(request.arrivalBy).getTime()
-                  : now.getTime() + request.durationMinutes * 60_000
-              )
-            : undefined
-        )
-      ]);
+    anchorCandidates.map(async (anchor) => {
+      // Mode arrivée : pas d'outbound walk depuis l'origine, le user se débrouille pour arriver au 1er stop
+      const outboundMinutes = request.destination
+        ? 0
+        : Math.ceil(walkingMinutes(request.origin, anchor.coordinate) * 1.75);
+      const secondaryPool = candidates.filter((p) => p.id !== anchor.id);
 
-      const anchorLog = anchorLogs.get(anchor.id);
-      if (anchorLog) anchorLog.returnMinutes = returnMinutes ?? null;
-
-      if (returnMinutes === undefined || returnMinutes > transitLimit) {
-        console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes ?? "n/a"}min > limit, skipped`);
-        return [];
-      }
-
-      const verifiedNearby = await providers.verifier.verify(nearby);
-      nearbyCount += verifiedNearby.length;
-
-      // Collecter les lieux nearby avec leurs signaux
-      for (const place of verifiedNearby) {
-        nearbyPlaceLogs.push({
-          anchorId: anchor.id,
-          placeId: place.id,
-          placeName: place.name,
-          category: place.category,
-          lat: place.coordinate.lat,
-          lng: place.coordinate.lng,
-          signalUnusual: place.signals.unusual,
-          signalQuality: place.signals.quality,
-          signalDescriptive: place.signals.descriptive,
-          signalChainPenalty: place.signals.chainPenalty,
-          wasSelected: false  // mis à jour après sélection finale
-        });
-      }
-
-      const builtRoutes = buildRoutes({
+      const routes = buildRoutes({
         request,
         anchor,
-        nearby: verifiedNearby,
-        outboundMinutes: outbound.get(anchor.id)!,
-        returnMinutes,
+        nearby: secondaryPool,
+        outboundMinutes,
+        returnMinutes: 0, // pas de boucle retour
         visitedIds,
         rejectedIds,
         now,
-        isScheduled
+        isScheduled,
+        destination: request.destination
       });
 
-      if (anchorLog) {
-        anchorLog.nearbyCount = verifiedNearby.length;
-        anchorLog.routesBuilt = builtRoutes.length;
-      }
-
-      console.log(`[trip] anchor "${anchor.name}": return=${returnMinutes}min, nearby=${verifiedNearby.length}, routes=${builtRoutes.length}`);
-      return builtRoutes;
+      console.log(`[trip] anchor "${anchor.name}": outbound=${outboundMinutes}min, routes=${routes.length}`);
+      return { routes, anchor, outboundMinutes };
     })
   );
 
-  const allRoutes = anchorData.flat();
-  const candidates = allRoutes.sort((a, b) => b.score - a.score).slice(0, 3);
-  console.log(`[trip] allRoutes=${allRoutes.length}, candidates=${candidates.length}`);
-  if (candidates.length === 0) {
-    throw new NoReliableTripError("Aucune sortie fiable n’est disponible pour ces contraintes.");
+  const allRoutes = anchorData.flatMap((d) => d.routes);
+  const walkTarget = walkingBudget(request.walking, request.durationMinutes);
+  const withWalkScore = (route: ScoredRoute) =>
+    route.score + (Math.min(route.walkingMinutes, walkTarget) / walkTarget) * 100;
+  const candidates3 = allRoutes.sort((a, b) => withWalkScore(b) - withWalkScore(a)).slice(0, 3);
+  console.log(`[trip] allRoutes=${allRoutes.length}, candidates=${candidates3.length}`);
+
+  if (candidates3.length === 0) {
+    throw new NoReliableTripError("Aucune balade disponible pour ces contraintes.");
   }
 
-  const chosenIndex = await providers.reranker.choose(candidates, request);
-  const chosen = candidates[chosenIndex] ?? candidates[0];
+  const chosenIndex = await providers.reranker.choose(candidates3, request);
+  const chosen = candidates3[chosenIndex] ?? candidates3[0];
 
-  // Marquer les lieux de la route finale comme sélectionnés
-  const selectedPlaceIds = new Set(chosen.places.map((p) => p.id));
-  for (const log of nearbyPlaceLogs) {
-    if (selectedPlaceIds.has(log.placeId)) log.wasSelected = true;
-  }
+  const { stops, legs } = await makeStopsAndLegs(chosen, request, now, providers.reranker, providers.routing);
 
-  const { stops, legs } = await makeStopsAndLegs(
-    chosen,
-    request,
-    now,
-    providers.reranker,
-    providers.routing
-  );
-  const transitMinutes = legs
-    .filter((leg) => leg.mode === "TRANSIT")
-    .reduce((sum, leg) => sum + leg.durationMinutes, 0);
-  const walkingMinutes = legs
+  const walkingMinutesTotal = legs
     .filter((leg) => leg.mode === "WALK")
     .reduce((sum, leg) => sum + leg.durationMinutes, 0);
   const visitMinutes = stops.reduce((sum, stop) => sum + stop.visitMinutes, 0);
-  const totalMinutes = transitMinutes + walkingMinutes + visitMinutes;
+  const totalMinutes = walkingMinutesTotal + visitMinutes;
   const margin = safetyMargin(request.durationMinutes);
   console.log(`[trip] final: total=${totalMinutes}min, budget=${request.durationMinutes - margin}min (margin=${margin}min)`);
+
   if (totalMinutes > request.durationMinutes - margin) {
-    throw new NoReliableTripError("Le trajet final ne laisse pas assez de marge pour rentrer.");
+    throw new NoReliableTripError("La balade dépasse le temps disponible.");
   }
 
+  const anchorLogs: AnchorLog[] = anchorData.map((d) => ({
+    anchorId: d.anchor.id,
+    anchorName: d.anchor.name,
+    lat: d.anchor.coordinate.lat,
+    lng: d.anchor.coordinate.lng,
+    outboundMinutes: d.outboundMinutes,
+    returnMinutes: 0,
+    withinTransitLimit: true,
+    nearbyCount: candidates.length - 1,
+    routesBuilt: d.routes.length
+  }));
+
+  const selectedIds = new Set(chosen.places.map((p) => p.id));
   const stats: EngineStats = {
-    anchorCount,
-    nearbyCount,
+    anchorCount: candidates.length,
+    nearbyCount: candidates.length,
     routesConsidered: allRoutes.length,
-    anchors: Array.from(anchorLogs.values()),
-    nearbyPlaces: nearbyPlaceLogs
+    anchors: anchorLogs,
+    nearbyPlaces: candidates.map((p) => ({
+      anchorId: "",
+      placeId: p.id,
+      placeName: p.name,
+      category: p.category,
+      lat: p.coordinate.lat,
+      lng: p.coordinate.lng,
+      signalUnusual: p.signals.unusual,
+      signalQuality: p.signals.quality,
+      signalDescriptive: p.signals.descriptive,
+      signalChainPenalty: p.signals.chainPenalty,
+      wasSelected: selectedIds.has(p.id)
+    }))
   };
 
   const plan: TripPlan = {
@@ -323,13 +240,15 @@ export async function generateTrip(
     createdAt: new Date().toISOString(),
     request,
     title: titleFor(chosen, request),
-    summary: `${stops.length} étapes choisies pour privilégier la surprise sans dépasser ton temps.`,
+    summary: request.destination
+      ? `${stops.length} étapes à pied vers ta destination.`
+      : `${stops.length} étapes à pied depuis ta position.`,
     startsAt: now.toISOString(),
     returnsAt: addMinutes(now, totalMinutes).toISOString(),
     totalMinutes,
     safetyMarginMinutes: request.durationMinutes - totalMinutes,
-    transitMinutes,
-    walkingMinutes,
+    transitMinutes: 0,
+    walkingMinutes: walkingMinutesTotal,
     visitMinutes,
     stops,
     legs,

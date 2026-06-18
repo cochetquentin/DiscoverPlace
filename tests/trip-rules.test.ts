@@ -34,7 +34,7 @@ describe("trip rules", () => {
   it("uses stable visit and walking budgets", () => {
     expect(visitDuration("micro")).toBe(15);
     expect(visitDuration("museum")).toBe(75);
-    expect(walkingBudget("high", 240)).toBe(84);
+    expect(walkingBudget("high", 240)).toBe(180);
   });
 
   it("rejects a business that closes before visit plus buffer", () => {

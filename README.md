@@ -34,25 +34,26 @@ Solutions simples :
      pas de référent HTTP ;
    - une clé navigateur limitée aux domaines autorisés et à **Maps JavaScript API**.
 
-   > **Note : transit non supporté au Japon**
-   > La Routes API ne retourne pas de données pour `travelMode: TRANSIT` au Japon
-   > (ni `computeRoutes`, ni `computeRouteMatrix`). C'est une limitation connue de
-   > Google Maps Platform dans cette région — ne pas essayer d'activer ou de déboguer
-   > cette fonctionnalité. L'app utilise une estimation géométrique pour les trajets
-   > en transport en commun, ce qui est suffisant pour filtrer les lieux et calculer
-   > des durées approximatives. Seul WALK bénéficie de données réelles.
 3. Définir `DEMO_PROVIDERS=false` et les clés Google.
-4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel.
+4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel. `OPENAI_MODEL` peut être défini pour choisir le modèle (défaut : `gpt-4.1-mini`).
 5. Ajouter `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` pour le logging des trips.
 
 ## Architecture
 
-- `lib/engine.ts` orchestre découverte, faisabilité, beam search, reranking et validation finale.
+- `lib/engine.ts` orchestre découverte, faisabilité, beam search, reranking et validation finale. Les trips sont 100 % à pied, sans transit ni boucle retour.
 - `lib/providers` contient les interfaces et implémentations Google, OpenAI et démo.
 - `lib/domain` contient les règles déterministes testables (scoring, beam-search, trip-rules, geo).
 - `app/api/trips/generate` expose la génération de trips.
-- `app/api/trips/feedback` enregistre le feedback utilisateur (like/dislike/skip).
+- `app/api/trips/feedback` enregistre l'action utilisateur sur un trip (`completed` / `rejected`).
+- `app/api/trips/rate` enregistre la note explicite (`like` / `dislike`) et le commentaire optionnel.
 - Le navigateur conserve localement les résumés, statuts et identifiants des lieux visités ou refusés.
+
+### Modes de génération
+
+| Mode | Comportement |
+|------|-------------|
+| **Départ** | Point de départ imposé, arrivée libre. Le trajet part de l'origine et se termine au dernier stop. |
+| **Arrivée** | Point d'arrivée imposé, départ libre. Les lieux sont cherchés autour de la destination, le trajet se termine à la destination. |
 
 ### Logging Supabase
 
@@ -61,17 +62,18 @@ Chaque requête est loggée dans Supabase (tables `trip_logs`, `trip_stops`, `tr
 Pour initialiser la base, coller le contenu de `supabase/setup.sql` dans l'éditeur SQL de Supabase. Le script est idempotent.
 
 ```bash
-make logs    # derniers trips avec stops détaillés
-make stats   # stats moteur (anchors, nearby, routes considérées)
+make logs       # derniers trips avec stops détaillés
+make stats      # stats moteur (anchors, nearby, routes considérées)
+make clean-db   # vider la base de données de logs
 ```
 
 ### Paramètres walking
 
 | Niveau | Rayon nearby | Budget marche | Durée visite max |
 |--------|-------------|---------------|-----------------|
-| low    | 1 000 m     | 12 % du temps | illimitée       |
-| medium | 2 000 m     | 22 % du temps | 60 min          |
-| high   | 5 000 m     | 45 % du temps | 45 min          |
+| low    | 1 500 m     | 20 % du temps | illimitée       |
+| medium | 3 500 m     | 50 % du temps | 30 min          |
+| high   | 2 500–6 000 m (selon durée) | 75 % du temps | 20 min |
 
 ## Vérification
 
@@ -80,6 +82,10 @@ make check
 ```
 
 Exécute le typecheck, le lint, les tests et le build production.
+
+```bash
+make clean   # supprimer .next, tsconfig.tsbuildinfo et test-results
+```
 
 ## Accès partout avec Vercel
 
@@ -97,7 +103,7 @@ déploiement. Un domaine personnalisé pourra être ajouté plus tard depuis Ver
 
 ## Coûts et sécurité
 
-- Les trips sont loggés dans Supabase (sans coordonnées de départ exactes).
+- Les trips sont loggés dans Supabase, y compris les coordonnées d'origine et de destination dans `request_payload`.
 - L'historique local n'est pas synchronisé entre appareils.
 - Les recherches Google utilisent des field masks précis.
 - OpenAI a un fallback déterministe.

@@ -96,8 +96,11 @@ function Metric({ value, label }: { value: string; label: string }) {
 export function DiscoverApp() {
   const [durationMinutes, setDuration] = useState<DurationMinutes>(120);
   const [walking, setWalking] = useState<WalkingLevel>("medium");
-  const [origin, setOrigin] = useState(TOKYO_STATION);
+  // Mode Départ : point de départ indépendant du mode Arrivée
+  const [departureOrigin, setDepartureOrigin] = useState(TOKYO_STATION);
   const [locationState, setLocationState] = useState("Position de démonstration : Tokyo Station");
+  // Mode Arrivée : point d'arrivée indépendant du mode Départ
+  const [arrivalDestination, setArrivalDestination] = useState<{ lat: number; lng: number } | null>(null);
   const [trip, setTrip] = useState<TripPlan | null>(null);
   const [tripRating, setTripRating] = useState<"like" | "dislike" | null>(null);
   const [ratingComment, setRatingComment] = useState("");
@@ -121,7 +124,7 @@ export function DiscoverApp() {
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         if (ignoreGeolocationRef.current) return;
-        setOrigin({ lat: coords.latitude, lng: coords.longitude });
+        setDepartureOrigin({ lat: coords.latitude, lng: coords.longitude });
         setLocationState("Position actuelle détectée");
       },
       (geolocationError) => {
@@ -165,12 +168,13 @@ export function DiscoverApp() {
           item.id === excludeTripId
       )
       .flatMap((item) => item.placeIds);
-    const input = {
-      origin,
-      durationMinutes,
-      walking,
-      excludeTripId,
-      excludedPlaceIds: [...new Set(excludedPlaceIds)],
+    // Mode Départ : origin imposée, pas de destination
+    // Mode Arrivée : destination imposée, origin = dummy (même coord), jamais réutilisée depuis le mode Départ
+    const input = timeMode === "departure"
+      ? { origin: departureOrigin, durationMinutes, walking, excludeTripId, excludedPlaceIds: [...new Set(excludedPlaceIds)] }
+      : { origin: arrivalDestination!, destination: arrivalDestination!, durationMinutes, walking, excludeTripId, excludedPlaceIds: [...new Set(excludedPlaceIds)] };
+    const finalInput = {
+      ...input,
       ...(timeMode === "departure" && !departureNow && selectedTime
         ? { departureAt: datetimeToISO(selectedTime) }
         : {}),
@@ -182,7 +186,7 @@ export function DiscoverApp() {
       const response = await fetch("/api/trips/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input)
+        body: JSON.stringify(finalInput)
       });
       const data = await response.json();
       if (!response.ok) {
@@ -281,7 +285,7 @@ export function DiscoverApp() {
               <p className="lede">{trip.summary}</p>
               <div className="trip-params">
                 <span className="chip active">{trip.request.durationMinutes / 60}h</span>
-                <span className="chip active">{{ low: "Tranquille", medium: "Normale", high: "J'aime marcher" }[trip.request.walking]}</span>
+                <span className="chip active">{{ low: "Tranquille", medium: "Normale", high: "Intense" }[trip.request.walking]}</span>
                 <span className="chip active">{{ surprise: "Surprise", unusual: "Inattendu", nature: "Nature", culture: "Culture", food: "Gourmand" }[trip.request.mood]}</span>
               </div>
             </div>
@@ -325,7 +329,6 @@ export function DiscoverApp() {
             </div>
             <div className="result-content-col">
           <div className="metrics">
-            <Metric value={`${trip.transitMinutes} min`} label="transport" />
             <Metric value={`${trip.walkingMinutes} min`} label="marche" />
             <Metric value={`${trip.visitMinutes} min`} label="sur place" />
             <Metric value={`${trip.safetyMarginMinutes} min`} label="de marge" />
@@ -356,16 +359,19 @@ export function DiscoverApp() {
                     </a>
                   )}
                   <div className="stop-actions">
-                    <a
-                      href={directionsUrl(
-                        index === 0 ? trip.request.origin : trip.stops[index - 1].place.coordinate,
-                        stop.place.coordinate
-                      )}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Itinéraire vers cette étape ↗
-                    </a>
+                    {/* En mode arrivée le premier stop n'a pas de point de départ connu */}
+                    {!(index === 0 && trip.request.destination) && (
+                      <a
+                        href={directionsUrl(
+                          index === 0 ? trip.request.origin : trip.stops[index - 1].place.coordinate,
+                          stop.place.coordinate
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Itinéraire vers cette étape ↗
+                      </a>
+                    )}
                   </div>
                 </div>
               </article>
@@ -374,8 +380,8 @@ export function DiscoverApp() {
               <div className="stop-index">✓</div>
               <div className="stop-card">
                 <div className="stop-meta"><span>{formatTime(trip.returnsAt)}</span></div>
-                <h2>Retour au point de départ</h2>
-                <p>Le temps de retour et la marge sont déjà comptés.</p>
+                <h2>{trip.request.destination ? "Arrivée à destination" : "Fin de la balade"}</h2>
+                <p>La marge est déjà comptée dans ce créneau.</p>
               </div>
             </article>
           </div>
@@ -396,25 +402,6 @@ export function DiscoverApp() {
               Pas terrible 👎
             </button>
           </div>
-          {tripRating !== null && !ratingSubmitted && (
-            <div className="rating-comment rating-comment--bottom">
-              <textarea
-                className="rating-textarea"
-                placeholder="Pourquoi ? (optionnel)"
-                value={ratingComment}
-                onChange={(e) => setRatingComment(e.target.value)}
-                rows={2}
-              />
-              <div className="rating-comment-actions">
-                <button className="button ghost" onClick={() => submitRating(tripRating)}>
-                  Passer
-                </button>
-                <button className="button primary" onClick={() => submitRating(tripRating, ratingComment)}>
-                  Envoyer
-                </button>
-              </div>
-            </div>
-          )}
           {ratingSubmitted && <p className="rating-thanks">Merci pour ton retour !</p>}
         </section>
       ) : (
@@ -438,7 +425,7 @@ export function DiscoverApp() {
                   <button
                     className={durationMinutes === duration ? "choice active" : "choice"}
                     key={duration}
-                    onClick={() => { setDuration(duration as DurationMinutes); if (timeMode === "arrival") setSelectedTime(""); }}
+                    onClick={() => setDuration(duration as DurationMinutes)}
                   >
                     <strong>{duration / 60}</strong>
                     <span>heures</span>
@@ -531,21 +518,29 @@ export function DiscoverApp() {
 
             <div className="location-line">
               <span>⌖</span>
-              <span>{locationState}</span>
-              <button className="mini-button" type="button" onClick={requestLocation}>
-                Réessayer
-              </button>
+              <span>{timeMode === "departure" ? locationState : (arrivalDestination ? "Point d'arrivée défini" : "Non défini")}</span>
+              {timeMode === "departure" && (
+                <button className="mini-button" type="button" onClick={requestLocation}>Réessayer</button>
+              )}
+              {timeMode === "arrival" && arrivalDestination && (
+                <button className="mini-button" type="button" onClick={() => setArrivalDestination(null)}>Supprimer</button>
+              )}
               <button className="mini-button" type="button" onClick={() => setShowPicker(true)}>
                 Choisir sur la carte
               </button>
             </div>
             {showPicker && (
               <LocationPicker
-                initialPosition={origin}
+                initialPosition={timeMode === "departure" ? departureOrigin : (arrivalDestination ?? TOKYO_STATION)}
+                label={timeMode === "departure" ? "Choisir un point de départ" : "Choisir un point d'arrivée"}
                 onConfirm={(pos) => {
-                  ignoreGeolocationRef.current = true;
-                  setOrigin(pos);
-                  setLocationState("Position choisie sur la carte");
+                  if (timeMode === "departure") {
+                    ignoreGeolocationRef.current = true;
+                    setDepartureOrigin(pos);
+                    setLocationState("Position choisie sur la carte");
+                  } else {
+                    setArrivalDestination(pos);
+                  }
                   setShowPicker(false);
                 }}
                 onCancel={() => setShowPicker(false)}
@@ -556,7 +551,7 @@ export function DiscoverApp() {
               className="button primary generate"
               disabled={
                 loading ||
-                (timeMode === "arrival" && !selectedTime) ||
+                (timeMode === "arrival" && !arrivalDestination) ||
                 (timeMode === "departure" && !departureNow && !selectedTime) ||
                 (selectedTime !== "" && !isTimeInBounds(selectedTime, timeMode, durationMinutes * 60_000))
               }
