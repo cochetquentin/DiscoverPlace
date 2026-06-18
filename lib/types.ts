@@ -9,6 +9,7 @@ export type Coordinate = { lat: number; lng: number };
 
 export type GenerateTripRequest = {
   origin: Coordinate;
+  destination?: Coordinate;  // point d'arrivée optionnel — la marche se termine ici
   durationMinutes: DurationMinutes;
   mood: Mood;
   walking: WalkingLevel;

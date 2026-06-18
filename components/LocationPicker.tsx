@@ -10,6 +10,7 @@ type Props = {
   initialPosition: Coord;
   onConfirm: (pos: Coord) => void;
   onCancel: () => void;
+  label?: string;
 };
 
 const TOKYO_STATION = { lat: 35.681236, lng: 139.767125 };
@@ -24,7 +25,7 @@ function isInTokyo(pos: Coord) {
   );
 }
 
-export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) {
+export function LocationPicker({ initialPosition, onConfirm, onCancel, label }: Props) {
   // Use Tokyo Station as fallback center when the initial position is outside bounds
   const center = isInTokyo(initialPosition) ? initialPosition : TOKYO_STATION;
   const mapRef = useRef<HTMLDivElement>(null);
@@ -144,7 +145,7 @@ export function LocationPicker({ initialPosition, onConfirm, onCancel }: Props) 
     >
       <div className="picker-modal">
         <div className="picker-header">
-          <span>Choisir un point de départ</span>
+          <span>{label ?? "Choisir un point de départ"}</span>
           <button className="mini-button" type="button" onClick={onCancel}>✕</button>
         </div>
 

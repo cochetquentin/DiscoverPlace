@@ -6,19 +6,19 @@ import type {
   WalkingLevel
 } from "@/lib/types";
 
-export const MAX_STOPS = 5;
+export const MAX_STOPS = 7;
 export const BEAM_WIDTH = 20;
 
 const VISIT_DURATIONS: Record<PlaceCategory, number> = {
   micro: 15,
-  art: 15,
-  viewpoint: 20,
-  temple: 20,
-  park: 45,
+  art: 20,
+  viewpoint: 15,
+  temple: 15,
+  park: 30,
   cafe: 45,
   restaurant: 60,
   museum: 75,
-  attraction: 75
+  attraction: 20
 };
 
 const moodCategoryFit: Record<Mood, Partial<Record<PlaceCategory, number>>> = {
@@ -51,34 +51,38 @@ export function visitDuration(category: PlaceCategory): number {
   return VISIT_DURATIONS[category];
 }
 
-export function effectiveVisitDuration(category: PlaceCategory, walking: WalkingLevel): number {
+export function effectiveVisitDuration(category: PlaceCategory, walking: WalkingLevel, duration?: DurationMinutes): number {
+  void duration;
   const base = visitDuration(category);
-  if (walking === "high") return Math.min(base, 45);
-  if (walking === "medium") return Math.min(base, 60);
+  if (walking === "high") return Math.min(base, 20);
+  if (walking === "medium") return Math.min(base, 30);
   return base;
 }
 
 export function walkingBudget(level: WalkingLevel, duration: DurationMinutes): number {
-  const ratio = level === "low" ? 0.12 : level === "medium" ? 0.22 : 0.45;
+  const ratio = level === "low" ? 0.20 : level === "medium" ? 0.50 : 0.75;
   return Math.max(15, Math.floor(duration * ratio));
 }
 
 export function minStopsRequired(level: WalkingLevel, duration: DurationMinutes): number {
-  if (level === "low") return 2;
+  if (level === "low") return Math.max(1, Math.ceil(duration / 120)); // 120→1, 240→2, 360→3
   if (level === "medium") return Math.max(2, Math.ceil(duration / 120));
-  return Math.max(2, Math.ceil(duration / 90)); // high: 6h = 4 stops min
+  return Math.max(2, Math.ceil(duration / 75)); // high: 120→2, 240→4, 360→5
 }
 
 export function minWalkingRequired(level: WalkingLevel, budget: number): number {
-  if (level === "high") return Math.floor(budget * 0.35);
-  if (level === "medium") return Math.floor(budget * 0.2);
-  return 0;
+  // Minimum strict = 60% du budget cible (25/50/75% de la durée)
+  // Si non atteignable, le fallback progressif retourne le mieux disponible
+  return Math.floor(budget * 0.60);
 }
 
-export function nearbyRadius(level: WalkingLevel): number {
-  if (level === "low") return 1000;
-  if (level === "medium") return 2000;
-  return 5000; // high: lieux dispersés = vraie marche entre les stops
+export function nearbyRadius(level: WalkingLevel, duration: DurationMinutes = 240): number {
+  if (level === "low") return 1500;
+  if (level === "medium") return 3500;
+  // high: réduire pour les trips courts — sinon l'outbound mange tout le budget
+  if (duration <= 120) return 2500;
+  if (duration <= 240) return 4000;
+  return 6000;
 }
 
 export function moodFit(place: PlaceCandidate, mood: Mood): number {
@@ -96,6 +100,21 @@ export function isOpenForVisit(
       allowed: true,
       warning: place.openingHours ? undefined : "Horaires non vérifiés"
     };
+  }
+
+  // Heuristique nocturne : uniquement les heures de nuit profonde (Tokyo = ville tardive)
+  // Musées : vraiment fermés 21h-9h. Cafés/restaurants : seulement nuit profonde (2h-7h/10h).
+  if (!isScheduled && !place.openingHours) {
+    const hourJST = (arrival.getUTCHours() + 9) % 24;
+    if (place.category === "museum" && (hourJST >= 21 || hourJST < 9)) {
+      return { allowed: false };
+    }
+    if (place.category === "cafe" && hourJST >= 2 && hourJST < 7) {
+      return { allowed: false };
+    }
+    if (place.category === "restaurant" && hourJST >= 2 && hourJST < 10) {
+      return { allowed: false };
+    }
   }
 
   if (isScheduled) {
