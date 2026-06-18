@@ -359,16 +359,19 @@ export function DiscoverApp() {
                     </a>
                   )}
                   <div className="stop-actions">
-                    <a
-                      href={directionsUrl(
-                        index === 0 ? trip.request.origin : trip.stops[index - 1].place.coordinate,
-                        stop.place.coordinate
-                      )}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Itinéraire vers cette étape ↗
-                    </a>
+                    {/* En mode arrivée le premier stop n'a pas de point de départ connu */}
+                    {!(index === 0 && trip.request.destination) && (
+                      <a
+                        href={directionsUrl(
+                          index === 0 ? trip.request.origin : trip.stops[index - 1].place.coordinate,
+                          stop.place.coordinate
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Itinéraire vers cette étape ↗
+                      </a>
+                    )}
                   </div>
                 </div>
               </article>
@@ -377,8 +380,8 @@ export function DiscoverApp() {
               <div className="stop-index">✓</div>
               <div className="stop-card">
                 <div className="stop-meta"><span>{formatTime(trip.returnsAt)}</span></div>
-                <h2>Retour au point de départ</h2>
-                <p>Le temps de retour et la marge sont déjà comptés.</p>
+                <h2>{trip.request.destination ? "Arrivée à destination" : "Fin de la balade"}</h2>
+                <p>La marge est déjà comptée dans ce créneau.</p>
               </div>
             </article>
           </div>

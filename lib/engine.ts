@@ -146,9 +146,10 @@ export async function generateTrip(
     throw new NoReliableTripError("Aucun lieu trouvé à proximité pour une balade.");
   }
 
-  // Chaque candidat peut être le premier stop — on essaie tout le pool
+  // Chaque candidat peut être le premier stop — exclure les lieux déjà vus/rejetés comme anchor
+  const anchorCandidates = candidates.filter((c) => !visitedIds.has(c.id));
   const anchorData = await Promise.all(
-    candidates.map(async (anchor) => {
+    anchorCandidates.map(async (anchor) => {
       // Mode arrivée : pas d'outbound walk depuis l'origine, le user se débrouille pour arriver au 1er stop
       const outboundMinutes = request.destination
         ? 0
@@ -213,12 +214,25 @@ export async function generateTrip(
     routesBuilt: d.routes.length
   }));
 
+  const selectedIds = new Set(chosen.places.map((p) => p.id));
   const stats: EngineStats = {
     anchorCount: candidates.length,
     nearbyCount: candidates.length,
     routesConsidered: allRoutes.length,
     anchors: anchorLogs,
-    nearbyPlaces: []
+    nearbyPlaces: candidates.map((p) => ({
+      anchorId: "",
+      placeId: p.id,
+      placeName: p.name,
+      category: p.category,
+      lat: p.coordinate.lat,
+      lng: p.coordinate.lng,
+      signalUnusual: p.signals.unusual,
+      signalQuality: p.signals.quality,
+      signalDescriptive: p.signals.descriptive,
+      signalChainPenalty: p.signals.chainPenalty,
+      wasSelected: selectedIds.has(p.id)
+    }))
   };
 
   const plan: TripPlan = {

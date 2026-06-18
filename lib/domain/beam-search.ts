@@ -108,7 +108,7 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
           ? Math.ceil(walkingMinutes(place.coordinate, destination) * 1.75)
           : 0;
         const total = outboundMinutes + dynamicReturn + nextWalking + nextVisit;
-        if (nextWalking > maxWalking || total > usableMinutes) continue;
+        if (outboundMinutes + nextWalking > maxWalking || total > usableMinutes) continue;
 
         const existingCategories = new Set(route.places.map((item) => item.category));
         // Point qui précédait `previous` : origin pour le 2e stop, avant-dernier sinon
@@ -152,8 +152,15 @@ export function buildRoutes(input: BeamSearchInput): ScoredRoute[] {
   }
 
   // Dernier recours : si aucune route multi-stop n'a été trouvée, accepter la route 1-stop
-  if (completed.length === 0 && initialRoute.totalMinutes <= usableMinutes) {
-    completed.push(initialRoute);
+  // En mode arrivée, inclure la marche finale vers la destination dans le budget
+  if (completed.length === 0) {
+    const fallbackReturn = destination
+      ? Math.ceil(walkingMinutes(anchor.coordinate, destination) * 1.75)
+      : 0;
+    const fallbackTotal = initialRoute.totalMinutes + fallbackReturn;
+    if (fallbackTotal <= usableMinutes) {
+      completed.push({ ...initialRoute, returnMinutes: fallbackReturn, totalMinutes: fallbackTotal });
+    }
   }
 
   const minWalk = minWalkingRequired(request.walking, maxWalking);

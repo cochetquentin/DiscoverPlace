@@ -70,6 +70,9 @@ export async function logTrip(
   // Insérer les stops détaillés
   if (result?.stops?.length) {
     const walkLegs = result.legs.filter((l) => l.mode === "WALK");
+    // En mode départ, legs = [outbound, stop0→1, stop1→2, …] → walkLegs[i] = marche vers stop i
+    // En mode arrivée, pas d'outbound → legs = [stop0→1, …, final→dest] → walkLegs[i-1] = marche vers stop i
+    const hasOutbound = !result.request.destination;
     const stopsPayload = result.stops.map((stop, index) => ({
       trip_log_id: tripLogId,
       position: index,
@@ -80,7 +83,9 @@ export async function logTrip(
       signal_unusual: stop.place.signals.unusual,
       signal_quality: stop.place.signals.quality,
       score: null as number | null,
-      walking_from_previous: index > 0 ? (walkLegs[index - 1]?.durationMinutes ?? null) : 0
+      walking_from_previous: hasOutbound
+        ? (walkLegs[index]?.durationMinutes ?? null)
+        : (index > 0 ? (walkLegs[index - 1]?.durationMinutes ?? null) : 0)
     }));
     const { error: stopsError } = await supabase.from("trip_stops").insert(stopsPayload);
     if (stopsError) console.error("[logger] trip_stops insert error:", stopsError.message);
