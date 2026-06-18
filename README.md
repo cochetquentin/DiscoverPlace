@@ -35,7 +35,7 @@ Solutions simples :
    - une clé navigateur limitée aux domaines autorisés et à **Maps JavaScript API**.
 
 3. Définir `DEMO_PROVIDERS=false` et les clés Google.
-4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel.
+4. Ajouter `OPENAI_API_KEY` pour le reranking éditorial optionnel. `OPENAI_MODEL` peut être défini pour choisir le modèle (défaut : `gpt-4.1-mini`).
 5. Ajouter `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` pour le logging des trips.
 
 ## Architecture
@@ -44,7 +44,8 @@ Solutions simples :
 - `lib/providers` contient les interfaces et implémentations Google, OpenAI et démo.
 - `lib/domain` contient les règles déterministes testables (scoring, beam-search, trip-rules, geo).
 - `app/api/trips/generate` expose la génération de trips.
-- `app/api/trips/feedback` enregistre le feedback utilisateur (like/dislike/skip).
+- `app/api/trips/feedback` enregistre l'action utilisateur sur un trip (`completed` / `rejected`).
+- `app/api/trips/rate` enregistre la note explicite (`like` / `dislike`) et le commentaire optionnel.
 - Le navigateur conserve localement les résumés, statuts et identifiants des lieux visités ou refusés.
 
 ### Modes de génération
@@ -61,8 +62,9 @@ Chaque requête est loggée dans Supabase (tables `trip_logs`, `trip_stops`, `tr
 Pour initialiser la base, coller le contenu de `supabase/setup.sql` dans l'éditeur SQL de Supabase. Le script est idempotent.
 
 ```bash
-make logs    # derniers trips avec stops détaillés
-make stats   # stats moteur (anchors, nearby, routes considérées)
+make logs       # derniers trips avec stops détaillés
+make stats      # stats moteur (anchors, nearby, routes considérées)
+make clean-db   # vider la base de données de logs
 ```
 
 ### Paramètres walking
@@ -81,6 +83,10 @@ make check
 
 Exécute le typecheck, le lint, les tests et le build production.
 
+```bash
+make clean   # supprimer .next, tsconfig.tsbuildinfo et test-results
+```
+
 ## Accès partout avec Vercel
 
 Vercel héberge l'application Next.js et fournit une URL HTTPS accessible depuis ton
@@ -97,7 +103,7 @@ déploiement. Un domaine personnalisé pourra être ajouté plus tard depuis Ver
 
 ## Coûts et sécurité
 
-- Les trips sont loggés dans Supabase (sans coordonnées de départ exactes).
+- Les trips sont loggés dans Supabase, y compris les coordonnées d'origine et de destination dans `request_payload`.
 - L'historique local n'est pas synchronisé entre appareils.
 - Les recherches Google utilisent des field masks précis.
 - OpenAI a un fallback déterministe.
